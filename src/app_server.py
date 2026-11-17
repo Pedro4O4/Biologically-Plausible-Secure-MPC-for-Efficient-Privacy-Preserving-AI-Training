@@ -1,18 +1,20 @@
 """
 Local dashboard for the thesis project. It only shows what has been built so far
 (Phase 0 = config + rate encoding, Phase 1 = plaintext ANN baseline,
-Phase 2 = LIF hidden layer) and grows one
+Phase 2 = LIF hidden layer, Phase 3 = STDP learning) and grows one
 phase at a time.
 
 Run:   .venv/bin/python src/app_server.py      then open http://127.0.0.1:8000
 The page asks this server for real values computed by the project's own code
 (config_loader.py, data.py, encoding.py, ann_model.py). Training only starts when
-you press the Train button on the Phase 1 tab.
+you press a Train button (Phase 1 and Phase 3 tabs).
 """
 
+import base64
 import json
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -23,11 +25,13 @@ from config_loader import load_config
 from data import load_mnist, make_splits
 from encoding import rate_encode
 from lif_model import LIFLayer
+from stdp import STDPTrainer
 
 torch.set_num_threads(4)
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = Path(__file__).resolve().parent / "web"
 ANN_DIR = ROOT / "results" / "ann"
+STDP_DIR = ROOT / "results" / "stdp"
 _encode_lock = threading.Lock()
 
 CONFIG = load_config()
@@ -81,6 +85,109 @@ def ann_start():
 
 def ann_status():
     return {"job": {**ANN_JOB, "history": list(ANN_JOB["history"])}, "result": ANN_RESULT}
+
+
+# ---------- Phase 3: STDP learning job ----------
+# A separate layer from the Phase 2 one, so the Phase 2 tab keeps showing random weights.
+STDP_LAYER = LIFLayer(CONFIG["architecture"]["num_inputs"], CONFIG["architecture"]["num_hidden"],
+                      CONFIG["neuron"], CONFIG["seed"])
+STDP_JOB = {"running": False, "sample": 0, "total": 0, "history": [], "error": None}
+STDP_RESULT = None
+_stdp_stop = threading.Event()
+_stdp_lock = threading.Lock()
+_stdp_version = 0
+
+if (STDP_DIR / "model.pt").exists() and (STDP_DIR / "result.json").exists():
+    _ck = torch.load(STDP_DIR / "model.pt")
+    STDP_LAYER.W, STDP_LAYER.theta = _ck["W"], _ck["theta"]
+    STDP_RESULT = json.loads((STDP_DIR / "result.json").read_text())
+    STDP_JOB["history"] = STDP_RESULT["history"]
+    STDP_JOB["sample"] = STDP_JOB["total"] = STDP_RESULT["samples"]
+    _stdp_version = 1
+
+
+def _stdp_run():
+    global STDP_RESULT, _splits, _stdp_version
+    try:
+        if _splits is None:
+            _splits = make_splits(CONFIG)
+        X = _splits["train"][0]                      # the labels are never used here
+        learn, T = CONFIG["learning"], CONFIG["simulation"]["num_steps"]
+        with _stdp_lock:
+            STDP_LAYER.reset(CONFIG["seed"])
+        trainer = STDPTrainer(STDP_LAYER, learn)
+        STDP_JOB["total"] = len(X) * learn["epochs"]
+        _stdp_version += 1
+        order_gen = torch.Generator().manual_seed(CONFIG["seed"])
+        t0, k, recent = time.time(), 0, 0
+        for _ in range(learn["epochs"]):
+            for idx in torch.randperm(len(X), generator=order_gen).tolist():
+                if _stdp_stop.is_set():
+                    break
+                with _encode_lock:
+                    torch.manual_seed(CONFIG["seed"] * 100003 + k)
+                    spikes = rate_encode(X[idx], T)
+                with _stdp_lock:
+                    recent += trainer.train_sample(spikes)
+                k += 1
+                STDP_JOB["sample"] = k
+                if k % 100 == 0:
+                    STDP_JOB["history"].append({"samples": k, "spikes": recent / 100,
+                                                "theta_mean": float(STDP_LAYER.theta.mean())})
+                    recent = 0
+                    _stdp_version += 1
+            if _stdp_stop.is_set():
+                break
+        STDP_DIR.mkdir(parents=True, exist_ok=True)
+        torch.save({"W": STDP_LAYER.W, "theta": STDP_LAYER.theta}, STDP_DIR / "model.pt")
+        result = {"samples": k, "seconds": round(time.time() - t0, 1),
+                  "history": list(STDP_JOB["history"]), "stopped_early": _stdp_stop.is_set()}
+        (STDP_DIR / "result.json").write_text(json.dumps(result))
+        STDP_RESULT = result
+        _stdp_version += 1
+    except Exception as e:
+        STDP_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        STDP_JOB["running"] = False
+
+
+def stdp_start():
+    global STDP_RESULT
+    if STDP_JOB["running"]:
+        return False
+    _stdp_stop.clear()
+    STDP_RESULT = None
+    STDP_JOB.update(running=True, sample=0, total=0, history=[], error=None)
+    threading.Thread(target=_stdp_run, daemon=True).start()
+    return True
+
+
+def stdp_status():
+    return {"job": {**STDP_JOB, "history": list(STDP_JOB["history"])}, "result": STDP_RESULT,
+            "weights_version": _stdp_version}
+
+
+def stdp_weights():
+    """Each hidden neuron's 784 incoming weights, scaled per neuron to 0..255 for display."""
+    with _stdp_lock:
+        W, theta, version = STDP_LAYER.W.t().clone(), STDP_LAYER.theta.clone(), _stdp_version
+    scaled = (W / W.max(dim=1, keepdim=True).values.clamp_min(1e-8) * 255).round().to(torch.uint8)
+    return {"w": base64.b64encode(scaled.numpy().tobytes()).decode(),
+            "theta": theta.tolist(), "version": version}
+
+
+def stdp_run(index, resample):
+    """Which hidden neurons answer to this image (winner-take-all forward pass)."""
+    index, spikes = _encode(index, resample)
+    with _stdp_lock:
+        out = STDP_LAYER.run(spikes, threshold=CONFIG["learning"]["threshold"], wta=True)
+    counts = out["spikes"].sum(dim=0)
+    top = [{"neuron": int(j), "spikes": int(counts[j])}
+           for j in counts.argsort(descending=True)[:5].tolist() if counts[j] > 0]
+    return {"index": index, "label": int(LABELS[index]), "T": spikes.shape[0],
+            "image": (IMAGES[index] * 255).round().int().tolist(),
+            "total_spikes": int(counts.sum()), "neurons_fired": int((counts > 0).sum()),
+            "top": top}
 
 
 def info():
@@ -173,6 +280,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(info())
         if path == "/api/ann/status":
             return self._json(ann_status())
+        if path == "/api/stdp/status":
+            return self._json(stdp_status())
+        if path == "/api/stdp/weights":
+            return self._json(stdp_weights())
         name = "index.html" if path == "/" else path.lstrip("/")
         f = (WEB_DIR / name).resolve()
         if WEB_DIR.resolve() not in f.parents or not f.is_file():
@@ -189,6 +300,13 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/lif/run":
                 return self._json(lif_run(body.get("index", 0), body.get("resample", 0),
                                           body.get("beta"), body.get("threshold")))
+            if self.path == "/api/stdp/train":
+                return self._json({"started": stdp_start()})
+            if self.path == "/api/stdp/stop":
+                _stdp_stop.set()
+                return self._json({"ok": True})
+            if self.path == "/api/stdp/run":
+                return self._json(stdp_run(body.get("index", 0), body.get("resample", 0)))
             if self.path == "/api/ann/train":
                 return self._json({"started": ann_start()})
             if self.path == "/api/ann/stop":

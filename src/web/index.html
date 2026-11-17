@@ -23,7 +23,7 @@ h1{margin:0;font-size:18px;letter-spacing:.05em;color:var(--accent);text-transfo
 .chip.todo{opacity:.5;border-style:dashed;cursor:default}
 .chip.active{background:rgba(139,92,246,.25);color:var(--ink);border-color:var(--accent)}
 [hidden]{display:none!important}
-.c4{grid-column:span 4}
+.c4{grid-column:span 4}.c8{grid-column:span 8}
 .progress{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden;flex:none;margin:6px 0}
 .progress div{height:100%;width:0;background:var(--accent);transition:width .3s}
 .trainbar{display:flex;gap:8px;align-items:center;flex:none;flex-wrap:wrap}
@@ -51,7 +51,7 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
 .panel h2 small{color:var(--muted);font-weight:400;margin-left:8px;font-size:11px}
 .net{grid-column:span 7}.imgp{grid-column:span 5}
 .rast{grid-column:span 5}.barp{grid-column:span 3}.cfgp{grid-column:span 4}
-@media (max-width:1000px){.grid{grid-template-rows:none;grid-auto-rows:340px}.net,.imgp,.rast,.barp,.cfgp,.c4{grid-column:span 12}.wrap{height:auto}}
+@media (max-width:1000px){.grid{grid-template-rows:none;grid-auto-rows:340px}.net,.imgp,.rast,.barp,.cfgp,.c4,.c8{grid-column:span 12}.wrap{height:auto}}
 /* Every canvas lives in a box whose size comes from the grid; the canvas never sizes itself. */
 .cv{position:relative;flex:1;min-height:0;min-width:0}
 .cv canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
@@ -212,6 +212,39 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <div class="cfgbox"><dl class="kv" id="lops"></dl></div>
     </section>
   </div>
+
+  <div class="grid" id="view-3" hidden>
+    <section class="panel c4">
+      <h2>STDP training <small>unsupervised: no labels, no backprop</small></h2>
+      <div class="trainbar">
+        <button id="st-train" class="primary" type="button">Train</button>
+        <button id="st-stop" type="button" disabled>Stop</button>
+        <span id="st-state" class="mono"></span>
+      </div>
+      <div class="progress"><div id="st-prog"></div></div>
+      <div class="cfgbox"><dl class="kv" id="st-cfg"></dl></div>
+      <div class="note">When a hidden neuron spikes, each of its incoming weights moves toward how recently its input pixel fired. Only the winner learns, using only its own spike and its own inputs.</div>
+    </section>
+    <section class="panel c8">
+      <h2>What each hidden neuron has learned <small>its 784 incoming weights shown as a 28 × 28 image, one tile per neuron</small></h2>
+      <div class="cv"><canvas id="st-fields"></canvas></div>
+    </section>
+    <section class="panel c4">
+      <h2>Hidden spikes per image <small>average over each 100 training images</small></h2>
+      <div class="cv"><canvas id="st-spk"></canvas></div>
+      <div class="note">x axis: groups of 100 training images</div>
+    </section>
+    <section class="panel c4">
+      <h2>Mean adaptive threshold <small>theta grows when a neuron wins</small></h2>
+      <div class="cv"><canvas id="st-theta"></canvas></div>
+      <div class="stats" id="st-stats"></div>
+    </section>
+    <section class="panel c4">
+      <h2>Which neurons answer this image <small>top 5 by spike count</small></h2>
+      <div class="cv"><canvas id="st-who"></canvas></div>
+      <div class="note" id="st-who-note"></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -221,7 +254,7 @@ const PHASES = [
   ["0", "Scope &amp; encoding", true],
   ["1", "ANN baseline", true],
   ["2", "LIF neurons", true],
-  ["3", "STDP", false],
+  ["3", "STDP", true],
   ["4", "Readout", false],
   ["5+", "Secure MPC", false],
 ];
@@ -231,7 +264,7 @@ let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, 
 function renderChips() {
   $('phases').innerHTML = PHASES.map(([n, name, built]) => {
     if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
-    const done = n === '0' || n === '2' || (n === '1' && ANN.result);
+    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result);
     return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
   }).join('');
 }
@@ -240,11 +273,12 @@ $('phases').addEventListener('click', e => {
 });
 function setView(v) {
   view = v;
-  [0, 1, 2].forEach(i => $('view-' + i).hidden = i !== v);
+  [0, 1, 2, 3].forEach(i => $('view-' + i).hidden = i !== v);
   $('controls-0').hidden = v === 1;
   renderChips();
   if (v === 1) pollAnn();
   if (v === 2) loadLif();
+  if (v === 3) { pollStdp(); loadStdpRun(); }
   requestAnimationFrame(draw);
 }
 
@@ -280,6 +314,7 @@ async function load() {
   drawStats();
   draw();
   if (view === 2) loadLif();
+  if (view === 3) loadStdpRun();
 }
 
 function drawStats() {
@@ -578,6 +613,112 @@ $('lnet').addEventListener('click', e => {
   clearTimeout(lifTimer); lifTimer = setTimeout(loadLif, 150);
 }));
 
+// ---------------- Phase 3: STDP ----------------
+let ST = {job: {running: false, sample: 0, total: 0, history: [], error: null}, result: null, weights_version: 0};
+let STW = null, STTheta = null, stVer = -1, stTimer = null, SR = null, stWasRunning = false;
+
+function tileCanvas(getV) {
+  const t = document.createElement('canvas'); t.width = 28; t.height = 28;
+  const c = t.getContext('2d'), img = c.createImageData(28, 28);
+  for (let i = 0; i < 784; i++) { const v = getV(i); img.data.set([v, v, v, 255], i * 4); }
+  c.putImageData(img, 0, 0);
+  return t;
+}
+
+async function pollStdp() {
+  try { ST = await api('/api/stdp/status'); } catch (e) { showErr(e); return; }
+  hideErr(); renderChips();
+  if (ST.weights_version !== stVer) {
+    try {
+      const w = await api('/api/stdp/weights');
+      STW = Uint8Array.from(atob(w.w), ch => ch.charCodeAt(0)); STTheta = w.theta; stVer = ST.weights_version;
+    } catch (e) { showErr(e); return; }
+    if (view === 3) loadStdpRun();
+  }
+  if (view === 3) drawStdp();
+  stWasRunning = ST.job.running;
+  clearTimeout(stTimer);
+  if (ST.job.running) stTimer = setTimeout(pollStdp, 500);
+}
+
+async function loadStdpRun() {
+  if (!CFG) return;
+  try { SR = await api('/api/stdp/run', {index: +$('index').value, resample}); } catch (e) { showErr(e); return; }
+  hideErr(); $('index').value = SR.index;
+  if (view === 3) drawStdp();
+}
+
+function drawFields() {
+  const {c, w, h} = fit($('st-fields')), H = CFG.architecture.num_hidden;
+  if (!STW) { emptyMsg(c, w, h, 'Loading weights...'); return; }
+  const side = Math.ceil(Math.sqrt(H)), size = Math.min(w, h), tile = size / side, ox = (w - size) / 2, oy = (h - size) / 2;
+  c.imageSmoothingEnabled = false;
+  for (let k = 0; k < H; k++) {
+    const t = tileCanvas(i => STW[k * 784 + i]);
+    c.drawImage(t, ox + (k % side) * tile + 1, oy + Math.floor(k / side) * tile + 1, tile - 2, tile - 2);
+  }
+  if (SR) {
+    c.strokeStyle = css('--spike'); c.lineWidth = 2;
+    SR.top.forEach(({neuron}) => c.strokeRect(ox + (neuron % side) * tile + 1, oy + Math.floor(neuron / side) * tile + 1, tile - 2, tile - 2));
+    c.lineWidth = 1;
+  }
+}
+
+function drawWho() {
+  const {c, w, h} = fit($('st-who'));
+  if (!SR || !STW) { emptyMsg(c, w, h, 'Loading...'); return; }
+  const items = [{label: `digit ${SR.label}`, tile: tileCanvas(i => SR.image[i]), color: css('--muted')}];
+  SR.top.forEach(({neuron, spikes}) => items.push({label: `#${neuron}: ${spikes}`, tile: tileCanvas(i => STW[neuron * 784 + i]), color: css('--spike')}));
+  const n = Math.max(items.length, 3), gap = 6, tile = Math.max(20, Math.min((w - gap * (n - 1)) / n, h - 18));
+  c.imageSmoothingEnabled = false; c.font = '10px ' + css('--mono'); c.textAlign = 'center'; c.textBaseline = 'top';
+  items.forEach((it, k) => {
+    const x = k * (tile + gap), y = Math.max(0, (h - tile - 16) / 2);
+    c.drawImage(it.tile, x, y, tile, tile);
+    c.strokeStyle = it.color; c.strokeRect(x, y, tile, tile);
+    c.fillStyle = it.color; c.fillText(it.label, x + tile / 2, y + tile + 3);
+  });
+  $('st-who-note').textContent = SR.top.length
+    ? `${SR.total_spikes} hidden spikes, ${SR.neurons_fired} different neurons fired. Spike count is shown after the neuron number. The yellow tiles are also outlined on the left.`
+    : 'No hidden neuron fired for this image (its input is too weak for the threshold).';
+}
+
+function drawStdp() {
+  if (!CFG) return;
+  const job = ST.job, f = x => x.toLocaleString('en-US'), H = CFG.architecture.num_hidden;
+  const Lc = CFG.learning, total = job.total || (CFG.data.num_train * Lc.epochs);
+  $('st-cfg').innerHTML = [
+    ['training images', f(CFG.data.num_train) + ' × ' + Lc.epochs + ' epoch'], ['learning rate', Lc.lr],
+    ['trace decay', Lc.trace_decay], ['x_target', Lc.x_target], ['theta_plus', Lc.theta_plus],
+    ['threshold (learning)', Lc.threshold], ['winner-take-all', Lc.wta], ['beta', CFG.neuron.beta],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('st-train').disabled = job.running; $('st-stop').disabled = !job.running;
+  $('st-prog').style.width = (job.sample / total * 100) + '%';
+  $('st-state').innerHTML = job.error ? `<span class="err">${job.error}</span>`
+    : job.running ? `${f(job.sample)} / ${f(total)} images`
+    : ST.result ? (ST.result.stopped_early ? `stopped after ${f(ST.result.samples)} images` : 'done') : 'not trained yet';
+
+  const hist = job.history, points = Math.max(2, Math.floor(total / 100));
+  lineChart('st-spk', [{color: css('--hidden'), v: hist.map(r => r.spikes)}], points, v => v.toFixed(1), 0,
+    hist.length ? Math.max(...hist.map(r => r.spikes)) * 1.1 : 1);
+  lineChart('st-theta', [{color: css('--thr'), v: hist.map(r => r.theta_mean)}], points, v => v.toFixed(0), 0,
+    hist.length ? Math.max(...hist.map(r => r.theta_mean)) * 1.1 : 1);
+
+  const th = STTheta || [], dead = th.filter(v => v === 0).length;
+  $('st-stats').innerHTML = [
+    [th.length ? dead + ' / ' + H : '–', 'neurons that never won'],
+    [th.length ? Math.max(...th).toFixed(1) : '–', 'largest threshold bonus'],
+    [ST.result ? ST.result.seconds + ' s' : '–', 'training time'],
+    [ST.result ? f(ST.result.samples) : (job.sample ? f(job.sample) : '–'), 'images trained on'],
+  ].map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('');
+  drawFields(); drawWho();
+}
+
+$('st-train').onclick = async () => {
+  try { await api('/api/stdp/train', {}); hideErr(); } catch (e) { showErr(e); return; }
+  stVer = -1; pollStdp();
+};
+$('st-stop').onclick = async () => { try { await api('/api/stdp/stop', {}); } catch (e) { showErr(e); } };
+
 // ---------------- Phase 1: ANN baseline ----------------
 async function pollAnn() {
   try { ANN = await api('/api/ann/status'); } catch (e) { return; }
@@ -716,6 +857,7 @@ $('ann-stop').onclick = async () => { await api('/api/ann/stop', {}); };
 function draw() {
   if (view === 1) { drawAnn(); return; }
   if (view === 2) { drawLif(); return; }
+  if (view === 3) { drawStdp(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();
@@ -741,7 +883,7 @@ window.addEventListener('resize', redraw);
   const info = await api('/api/info');
   CFG = info.config; renderConfig(info);
   $('index').max = info.num_images - 1;
-  renderChips(); pollAnn();
+  renderChips(); pollAnn(); pollStdp();
   await load();
 })().catch(e => { document.body.insertAdjacentHTML('beforeend', `<pre style="color:#f0607a;padding:20px">${e.message}</pre>`); });
 </script>

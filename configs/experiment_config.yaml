@@ -44,3 +44,17 @@ neuron:
   threshold: 50.0      # A neuron spikes when its membrane potential reaches this.
   reset: "subtract"    # After a spike: u = u - threshold ("zero" would set u = 0).
   w_norm: 78.4         # Random initial weights: each neuron's incoming weights sum to this.
+
+# ------------------------------------------------------------
+# Phase 3: STDP learning (unsupervised, local, no labels)
+# ------------------------------------------------------------
+learning:
+  threshold: 15.0      # Base threshold while learning (neuron.threshold is only for Phase 2).
+  wta: true            # Winner-take-all: at most one hidden spike per timestep.
+  lr: 0.02             # STDP step size.
+  trace_decay: 0.8     # Input trace keeps 80% of its value each timestep.
+  x_target: 2.0        # Trace level where a post spike changes nothing.
+  w_max: 1.0           # Upper bound used by the soft-bound term.
+  mu: 1.0              # Soft-bound exponent.
+  theta_plus: 0.5      # Threshold bonus a neuron gets each time it wins.
+  epochs: 1            # Passes over the training images (data.num_train of them).
