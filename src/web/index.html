@@ -18,9 +18,21 @@ header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex:none}
 h1{margin:0;font-size:18px;letter-spacing:.05em;color:var(--accent);text-transform:uppercase}
 .sub{color:var(--muted);font-size:11.5px}
 .phases{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-.chip{border:1px solid var(--line);border-radius:999px;padding:1px 10px;font-size:11px;color:var(--muted)}
+.chip{border:1px solid var(--line);border-radius:999px;padding:1px 10px;font-size:11px;color:var(--muted);background:transparent}
 .chip.done{border-color:var(--hidden);color:var(--hidden)}
-.chip.todo{opacity:.5;border-style:dashed}
+.chip.todo{opacity:.5;border-style:dashed;cursor:default}
+.chip.active{background:rgba(139,92,246,.25);color:var(--ink);border-color:var(--accent)}
+[hidden]{display:none!important}
+.c4{grid-column:span 4}
+.progress{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden;flex:none;margin:6px 0}
+.progress div{height:100%;width:0;background:var(--accent);transition:width .3s}
+.trainbar{display:flex;gap:8px;align-items:center;flex:none;flex-wrap:wrap}
+.arch{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0 8px;font-size:11.5px;flex:none}
+.arch .box{border:1px solid var(--line);border-radius:6px;padding:3px 8px;background:var(--bg);text-align:center;line-height:1.25}
+.arch .box small{display:block;color:var(--muted);font-size:10px}
+.arch .arrow{color:var(--muted)}
+.big{font:600 34px var(--mono);color:var(--hidden);line-height:1.1;flex:none}
+.err{color:var(--output);font-size:12px}
 .controls{flex:none;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px}
 .controls label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-right:6px}
 button,input[type=number]{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer}
@@ -34,7 +46,7 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
 .panel h2 small{color:var(--muted);font-weight:400;margin-left:8px;font-size:11px}
 .net{grid-column:span 7}.imgp{grid-column:span 5}
 .rast{grid-column:span 5}.barp{grid-column:span 3}.cfgp{grid-column:span 4}
-@media (max-width:1000px){.grid{grid-template-rows:none;grid-auto-rows:340px}.net,.imgp,.rast,.barp,.cfgp{grid-column:span 12}.wrap{height:auto}}
+@media (max-width:1000px){.grid{grid-template-rows:none;grid-auto-rows:340px}.net,.imgp,.rast,.barp,.cfgp,.c4{grid-column:span 12}.wrap{height:auto}}
 /* Every canvas lives in a box whose size comes from the grid; the canvas never sizes itself. */
 .cv{position:relative;flex:1;min-height:0;min-width:0}
 .cv canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
@@ -63,7 +75,7 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
     <div class="phases" id="phases"></div>
   </header>
 
-  <div class="controls">
+  <div class="controls" id="controls-0">
     <span><label>Test image</label>
       <button id="prev" type="button">&larr;</button>
       <input type="number" id="index" min="0" value="0">
@@ -75,7 +87,7 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <button id="play" class="primary" type="button">Play</button></span>
   </div>
 
-  <div class="grid">
+  <div class="grid" id="view-0">
     <section class="panel net">
       <h2>Neural Network <small>architecture from config</small></h2>
       <div class="cv"><canvas id="net"></canvas></div>
@@ -113,20 +125,80 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <div class="cfgbox"><dl class="kv" id="cfg"></dl></div>
     </section>
   </div>
+
+  <div class="grid" id="view-1" hidden>
+    <section class="panel c4">
+      <h2>ANN model <small>backpropagation, plaintext</small></h2>
+      <div class="arch" id="ann-arch"></div>
+      <div class="trainbar">
+        <button id="ann-train" class="primary" type="button">Train</button>
+        <button id="ann-stop" type="button" disabled>Stop</button>
+        <span id="ann-state" class="mono"></span>
+      </div>
+      <div class="progress"><div id="ann-prog"></div></div>
+      <div class="cfgbox"><dl class="kv" id="ann-cfg"></dl></div>
+    </section>
+    <section class="panel c4">
+      <h2>Loss <small>lower is better</small></h2>
+      <div class="cv"><canvas id="ann-loss"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>train</span><span><i style="background:var(--spike)"></i>validation</span></div>
+    </section>
+    <section class="panel c4">
+      <h2>Accuracy</h2>
+      <div class="cv"><canvas id="ann-acc"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>train</span><span><i style="background:var(--spike)"></i>validation</span></div>
+    </section>
+    <section class="panel c4">
+      <h2>Test result <small id="ann-test-sub"></small></h2>
+      <div class="big" id="ann-test-acc">–</div>
+      <div class="note" id="ann-test-note">Train the model to see the test accuracy.</div>
+      <h2 style="margin-top:8px">Accuracy per digit</h2>
+      <div class="cv"><canvas id="ann-pc"></canvas></div>
+    </section>
+    <section class="panel c4">
+      <h2>Confusion matrix <small>rows = true digit, columns = predicted</small></h2>
+      <div class="cv"><canvas id="ann-conf"></canvas></div>
+    </section>
+    <section class="panel c4">
+      <h2>Cost numbers <small>to compare with the SNN and MPC later</small></h2>
+      <div class="stats" id="ann-cost"></div>
+      <div class="note">Every ReLU is a comparison (x &gt; 0). Under MPC, comparisons are the expensive operation, so we write this number down now.</div>
+    </section>
+  </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
+// Phases that exist on the screen are tabs; the rest are greyed until we build them.
 const PHASES = [
   ["0", "Scope &amp; encoding", true],
-  ["1", "ANN baseline", false],
+  ["1", "ANN baseline", true],
   ["2", "LIF neurons", false],
   ["3", "STDP", false],
   ["4", "Readout", false],
   ["5+", "Secure MPC", false],
 ];
-$('phases').innerHTML = PHASES.map(([n, name, done]) =>
-  `<span class="chip ${done ? 'done' : 'todo'}">Phase ${n} · ${name}${done ? ' ✓' : ''}</span>`).join('');
+let view = 0;
+let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, result: null}, annTimer = null;
+
+function renderChips() {
+  $('phases').innerHTML = PHASES.map(([n, name, built]) => {
+    if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
+    const done = n === '0' || (n === '1' && ANN.result);
+    return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
+  }).join('');
+}
+$('phases').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]'); if (b) setView(+b.dataset.view);
+});
+function setView(v) {
+  view = v;
+  [0, 1].forEach(i => $('view-' + i).hidden = i !== v);
+  $('controls-0').hidden = v !== 0;
+  renderChips();
+  if (v === 1) pollAnn();
+  requestAnimationFrame(draw);
+}
 
 let CFG = null, D = null, spikes = null, counts = null, step = 0, resample = 0, timer = null;
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -278,7 +350,143 @@ function drawBars() {
   for (let t = 0; t < T; t += every) c.fillText(t, L + t * cw + cw / 2, h - B + 3);
 }
 
+// ---------------- Phase 1: ANN baseline ----------------
+async function pollAnn() {
+  try { ANN = await api('/api/ann/status'); } catch (e) { return; }
+  renderChips();
+  if (view === 1) drawAnn();
+  clearTimeout(annTimer);
+  if (ANN.job.running) annTimer = setTimeout(pollAnn, 500);
+}
+
+function emptyMsg(c, w, h, msg) {
+  c.fillStyle = css('--muted'); c.font = '12px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(msg, w / 2, h / 2);
+}
+
+function lineChart(id, series, total, fmt, lo, hi) {
+  const {c, w, h} = fit($(id));
+  const L = 42, B = 18, R = 8, Tp = 8, pw = w - L - R, ph = h - B - Tp;
+  const all = series.flatMap(s => s.v);
+  if (!all.length) { emptyMsg(c, w, h, 'No training run yet'); return; }
+  let mn = lo ?? Math.min(...all), mx = hi ?? Math.max(...all);
+  if (mx - mn < 1e-9) mx = mn + 1;
+  const X = e => L + (total <= 1 ? 0 : (e - 1) / (total - 1)) * pw, Y = v => Tp + ph - (v - mn) / (mx - mn) * ph;
+  c.font = '10px ' + css('--mono'); c.textBaseline = 'middle'; c.textAlign = 'right';
+  for (let k = 0; k <= 4; k++) {
+    const v = mn + (mx - mn) * k / 4, y = Y(v);
+    c.fillStyle = css('--muted'); c.fillText(fmt(v), L - 5, y);
+    c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(L, y); c.lineTo(L + pw, y); c.stroke();
+  }
+  c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = css('--muted');
+  const every = Math.max(1, Math.ceil(total / 10));
+  for (let e = 1; e <= total; e += every) c.fillText(e, X(e), h - B + 4);
+  series.forEach(s => {
+    c.strokeStyle = s.color; c.fillStyle = s.color; c.lineWidth = 2; c.beginPath();
+    s.v.forEach((v, i) => i ? c.lineTo(X(i + 1), Y(v)) : c.moveTo(X(i + 1), Y(v)));
+    c.stroke();
+    s.v.forEach((v, i) => { c.beginPath(); c.arc(X(i + 1), Y(v), 2.5, 0, 7); c.fill(); });
+  });
+  c.lineWidth = 1;
+}
+
+function drawConfusion(conf) {
+  const {c, w, h} = fit($('ann-conf'));
+  if (!conf) { emptyMsg(c, w, h, 'No result yet'); return; }
+  const L = 22, Tp = 18, size = Math.min(w - L - 4, h - Tp - 4), cell = size / 10, ox = L + (w - L - 4 - size) / 2;
+  c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted');
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (let k = 0; k < 10; k++) {
+    c.fillText(k, ox + (k + .5) * cell, Tp - 8);
+    c.textAlign = 'right'; c.fillText(k, ox - 5, Tp + (k + .5) * cell); c.textAlign = 'center';
+  }
+  for (let i = 0; i < 10; i++) {
+    const total = conf[i].reduce((a, b) => a + b, 0) || 1;
+    for (let j = 0; j < 10; j++) {
+      const frac = conf[i][j] / total;
+      c.fillStyle = i === j ? `rgba(45,212,164,${0.12 + 0.75 * frac})` : `rgba(240,96,122,${Math.min(1, frac * 10) * 0.9})`;
+      c.fillRect(ox + j * cell + 1, Tp + i * cell + 1, cell - 2, cell - 2);
+      if (cell >= 26 && conf[i][j] > 0) {
+        c.fillStyle = css('--ink'); c.fillText(conf[i][j], ox + (j + .5) * cell, Tp + (i + .5) * cell);
+      }
+    }
+  }
+}
+
+function drawPerClass(vals) {
+  const {c, w, h} = fit($('ann-pc'));
+  if (!vals) { emptyMsg(c, w, h, 'No result yet'); return; }
+  const L = 34, B = 16, Tp = 12, pw = w - L - 4, ph = h - B - Tp, bw = pw / 10;
+  const lo = Math.max(0, Math.floor((Math.min(...vals) - 0.02) * 20) / 20);
+  const Y = v => Tp + ph - (v - lo) / (1 - lo) * ph;
+  c.font = '10px ' + css('--mono'); c.textAlign = 'right'; c.textBaseline = 'middle'; c.fillStyle = css('--muted');
+  c.fillText((lo * 100).toFixed(0) + '%', L - 4, Y(lo)); c.fillText('100%', L - 4, Y(1));
+  vals.forEach((v, k) => {
+    c.fillStyle = css('--hidden'); c.fillRect(L + k * bw + 3, Y(v), bw - 6, Y(lo) - Y(v));
+    c.fillStyle = css('--ink'); c.textAlign = 'center'; c.textBaseline = 'bottom';
+    c.fillText((v * 100).toFixed(0), L + (k + .5) * bw, Y(v) - 1);
+    c.fillStyle = css('--muted'); c.textBaseline = 'top'; c.fillText(k, L + (k + .5) * bw, h - B + 3);
+  });
+}
+
+function drawAnn() {
+  if (!CFG) return;
+  const A = CFG.architecture, H = CFG.ann, n = CFG.data, job = ANN.job, res = ANN.result;
+  const p1 = A.num_inputs * A.num_hidden + A.num_hidden, p2 = A.num_hidden * A.num_outputs + A.num_outputs;
+  const f = x => x.toLocaleString('en-US');
+  $('ann-arch').innerHTML =
+    `<div class="box">Input<small>${A.num_inputs}</small></div><span class="arrow">→</span>` +
+    `<div class="box">Linear<small>${f(p1)} weights</small></div><span class="arrow">→</span>` +
+    `<div class="box">ReLU<small>${A.num_hidden}</small></div><span class="arrow">→</span>` +
+    `<div class="box">Linear<small>${f(p2)} weights</small></div><span class="arrow">→</span>` +
+    `<div class="box">Output<small>${A.num_outputs}</small></div>`;
+  $('ann-cfg').innerHTML = [
+    ['optimizer', H.optimizer], ['learning rate', H.lr], ['batch size', H.batch_size], ['epochs', H.epochs],
+    ['train images', f(n.num_train)], ['validation images', f(n.num_val)], ['test images', '10,000'], ['seed', CFG.seed],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  $('ann-train').disabled = job.running; $('ann-stop').disabled = !job.running;
+  const total = job.total || H.epochs;
+  $('ann-prog').style.width = (job.epoch / total * 100) + '%';
+  $('ann-state').innerHTML = job.error ? `<span class="err">${job.error}</span>`
+    : job.running ? `epoch ${job.epoch}/${total}`
+    : res ? (res.epochs_run < total ? `stopped at epoch ${res.epochs_run}` : 'done') : 'not trained yet';
+
+  const hist = job.history;
+  lineChart('ann-loss', [{color: css('--input'), v: hist.map(r => r.train_loss)}, {color: css('--spike'), v: hist.map(r => r.val_loss)}],
+    total, v => v.toFixed(2), 0, hist.length ? Math.max(...hist.map(r => Math.max(r.train_loss, r.val_loss))) * 1.05 : 1);
+  const accVals = hist.flatMap(r => [r.train_acc, r.val_acc]);
+  lineChart('ann-acc', [{color: css('--input'), v: hist.map(r => r.train_acc)}, {color: css('--spike'), v: hist.map(r => r.val_acc)}],
+    total, v => (v * 100).toFixed(0) + '%', accVals.length ? Math.max(0, Math.floor(Math.min(...accVals) * 20) / 20 - 0.02) : 0, 1);
+
+  if (res) {
+    $('ann-test-acc').textContent = (res.test.accuracy * 100).toFixed(2) + '%';
+    $('ann-test-sub').textContent = `${f(res.test.n)} untouched images`;
+    $('ann-test-note').textContent = `Test loss ${res.test.loss.toFixed(3)}. Trained ${res.epochs_run} epochs in ${res.train_seconds}s.`;
+  } else {
+    $('ann-test-acc').textContent = '–'; $('ann-test-sub').textContent = '';
+    $('ann-test-note').textContent = job.running ? 'Training... the test set is only used once, at the end.' : 'Train the model to see the test accuracy.';
+  }
+  drawPerClass(res && res.test.per_class);
+  drawConfusion(res && res.test.confusion);
+
+  const last = hist[hist.length - 1];
+  const cost = res ? res.cost : null;
+  $('ann-cost').innerHTML = [
+    [cost ? f(cost.parameters) : f(p1 + p2), 'trainable parameters'],
+    [cost ? f(cost.multiplications_per_sample) : f(A.num_inputs * A.num_hidden + A.num_hidden * A.num_outputs), 'multiplications per image'],
+    [cost ? f(cost.relu_comparisons_per_sample) : f(A.num_hidden), 'ReLU comparisons per image'],
+    [res ? res.train_seconds + ' s' : '–', 'training time'],
+    [last ? (last.train_acc * 100).toFixed(1) + '%' : '–', 'train accuracy (last epoch)'],
+    [last ? (last.val_acc * 100).toFixed(1) + '%' : '–', 'validation accuracy (last epoch)'],
+  ].map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('');
+}
+
+$('ann-train').onclick = async () => { await api('/api/ann/train', {}); pollAnn(); };
+$('ann-stop').onclick = async () => { await api('/api/ann/stop', {}); };
+
 function draw() {
+  if (view === 1) { drawAnn(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();
@@ -304,6 +512,7 @@ window.addEventListener('resize', redraw);
   const info = await api('/api/info');
   CFG = info.config; renderConfig(info);
   $('index').max = info.num_images - 1;
+  renderChips(); pollAnn();
   await load();
 })().catch(e => { document.body.insertAdjacentHTML('beforeend', `<pre style="color:#f0607a;padding:20px">${e.message}</pre>`); });
 </script>

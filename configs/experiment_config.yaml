@@ -18,3 +18,20 @@ simulation:
 
 encoding:
   method: "rate"   # Pixel intensity -> spike probability per timestep.
+
+# ------------------------------------------------------------
+# Phase 1: plaintext ANN baseline (backpropagation)
+# ------------------------------------------------------------
+seed: 0                # Same seed for data split and weight init, so runs repeat.
+
+data:
+  num_train: 5000      # Images used for training (taken from the MNIST train set).
+  num_val: 1000        # Images for validation (also from the train set, never overlapping).
+  # Test set = the full official 10,000-image MNIST test set, untouched until the end.
+
+ann:
+  # Architecture reuses architecture.* above: 784 -> hidden (ReLU) -> 10.
+  optimizer: "adam"
+  lr: 0.001
+  batch_size: 64
+  epochs: 20

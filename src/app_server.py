@@ -1,10 +1,12 @@
 """
 Local dashboard for the thesis project. It only shows what has been built so far
-(currently: Phase 0 = config + rate encoding) and grows one phase at a time.
+(Phase 0 = config + rate encoding, Phase 1 = plaintext ANN baseline) and grows one
+phase at a time.
 
 Run:   .venv/bin/python src/app_server.py      then open http://127.0.0.1:8000
-No training happens here; the page asks this server for real values computed by
-the project's own code (config_loader.py, data.py, encoding.py).
+The page asks this server for real values computed by the project's own code
+(config_loader.py, data.py, encoding.py, ann_model.py). Training only starts when
+you press the Train button on the Phase 1 tab.
 """
 
 import json
@@ -15,15 +17,66 @@ from pathlib import Path
 
 import torch
 
+from ann_model import train_ann
 from config_loader import load_config
-from data import load_mnist
+from data import load_mnist, make_splits
 from encoding import rate_encode
 
+torch.set_num_threads(4)
+ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = Path(__file__).resolve().parent / "web"
+ANN_DIR = ROOT / "results" / "ann"
 _encode_lock = threading.Lock()
 
 CONFIG = load_config()
 IMAGES, LABELS = load_mnist(train=False)
+
+# ---------- Phase 1: ANN baseline job ----------
+ANN_JOB = {"running": False, "epoch": 0, "total": CONFIG["ann"]["epochs"], "history": [], "error": None}
+ANN_RESULT = None
+_ann_stop = threading.Event()
+_splits = None
+
+if (ANN_DIR / "metrics.json").exists():
+    ANN_RESULT = json.loads((ANN_DIR / "metrics.json").read_text())
+    ANN_JOB["history"] = ANN_RESULT["history"]
+    ANN_JOB["epoch"] = ANN_RESULT["epochs_run"]
+
+
+def _ann_run():
+    global ANN_RESULT, _splits
+    try:
+        if _splits is None:
+            _splits = make_splits(CONFIG)
+
+        def on_epoch(rec):
+            ANN_JOB["history"].append(rec)
+            ANN_JOB["epoch"] = rec["epoch"]
+
+        model, metrics = train_ann(CONFIG, _splits, on_epoch, _ann_stop.is_set)
+        ANN_DIR.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), ANN_DIR / "model.pt")
+        (ANN_DIR / "metrics.json").write_text(json.dumps(metrics))
+        ANN_RESULT = metrics
+    except Exception as e:
+        ANN_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        ANN_JOB["running"] = False
+
+
+def ann_start():
+    global ANN_RESULT
+    if ANN_JOB["running"]:
+        return False
+    _ann_stop.clear()
+    ANN_RESULT = None
+    ANN_JOB.update(running=True, epoch=0, total=CONFIG["ann"]["epochs"], history=[], error=None)
+    threading.Thread(target=_ann_run, daemon=True).start()
+    return True
+
+
+def ann_status():
+    return {"job": {**ANN_JOB, "history": list(ANN_JOB["history"])}, "result": ANN_RESULT}
 
 
 def info():
@@ -75,6 +128,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/info":
             return self._json(info())
+        if path == "/api/ann/status":
+            return self._json(ann_status())
         name = "index.html" if path == "/" else path.lstrip("/")
         f = (WEB_DIR / name).resolve()
         if WEB_DIR.resolve() not in f.parents or not f.is_file():
@@ -88,6 +143,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/api/sample":
                 return self._json(sample(body.get("index", 0), body.get("resample", 0)))
+            if self.path == "/api/ann/train":
+                return self._json({"started": ann_start()})
+            if self.path == "/api/ann/stop":
+                _ann_stop.set()
+                return self._json({"ok": True})
             self._json({"error": "not found"}, 404)
         except Exception as e:
             self._json({"error": str(e)}, 500)
