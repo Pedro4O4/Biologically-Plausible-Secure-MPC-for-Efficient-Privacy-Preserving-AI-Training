@@ -33,6 +33,11 @@ h1{margin:0;font-size:18px;letter-spacing:.05em;color:var(--accent);text-transfo
 .arch .arrow{color:var(--muted)}
 .big{font:600 34px var(--mono);color:var(--hidden);line-height:1.1;flex:none}
 .err{color:var(--output);font-size:12px}
+.slider{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font-size:12px;margin-bottom:4px}
+.slider input[type=range]{width:100%}
+.slider label{margin:0}
+.slider output{font-family:var(--mono);min-width:46px;text-align:right}
+.sub2{font-size:11px;color:var(--muted)}
 .controls{flex:none;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px}
 .controls label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-right:6px}
 button,input[type=number]{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer}
@@ -86,6 +91,8 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <input type="range" id="step" min="0" max="24" value="0">
       <button id="play" class="primary" type="button">Play</button></span>
   </div>
+
+  <div id="banner" class="err" hidden style="flex:none;background:var(--panel);border:1px solid var(--output);border-radius:8px;padding:8px 12px"></div>
 
   <div class="grid" id="view-0">
     <section class="panel net">
@@ -165,6 +172,46 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <div class="note">Every ReLU is a comparison (x &gt; 0). Under MPC, comparisons are the expensive operation, so we write this number down now.</div>
     </section>
   </div>
+
+  <div class="grid" id="view-2" hidden>
+    <section class="panel net">
+      <h2>Neural Network <small>hidden LIF neurons are live. Click one to inspect it.</small></h2>
+      <div class="cv"><canvas id="lnet"></canvas></div>
+      <div class="legend">
+        <span><i style="background:var(--spike)"></i>spike now (input or hidden)</span>
+        <span><i style="background:var(--hidden);opacity:.7"></i>hidden neuron (brighter = membrane closer to threshold)</span>
+        <span><i style="background:var(--output);opacity:.5"></i>output (Phase 4)</span>
+      </div>
+    </section>
+    <section class="panel imgp">
+      <h2 id="lmem-title">Membrane potential</h2>
+      <div class="cv"><canvas id="lmem"></canvas></div>
+      <div class="legend">
+        <span><i style="background:var(--input)"></i>membrane u (before reset)</span>
+        <span><i style="background:var(--thr)"></i>threshold</span>
+        <span><i style="background:var(--spike)"></i>spike</span>
+      </div>
+    </section>
+    <section class="panel rast">
+      <h2>Hidden Spike Raster <small>rows = 100 hidden neurons, columns = timesteps</small></h2>
+      <div class="cv"><canvas id="lras"></canvas></div>
+    </section>
+    <section class="panel barp">
+      <h2>Hidden spikes per timestep</h2>
+      <div class="cv"><canvas id="lbars"></canvas></div>
+      <div class="stats" id="lstats"></div>
+    </section>
+    <section class="panel cfgp">
+      <h2>LIF settings <small>sliders only preview. Real values live in the YAML.</small></h2>
+      <div class="slider"><label for="l-beta">beta</label><input type="range" id="l-beta" min="0.5" max="0.99" step="0.01"><output id="l-beta-o"></output></div>
+      <div class="slider"><label for="l-thr">threshold</label><input type="range" id="l-thr" min="5" max="120" step="1"><output id="l-thr-o"></output></div>
+      <div class="cv" style="flex:none;height:64px;margin-top:4px"><canvas id="l-decay"></canvas></div>
+      <div class="sub2" id="l-decay-txt"></div>
+      <div class="sub2" id="l-cfg-line"></div>
+      <h2 style="margin-top:8px">Operation counts for this image <small>plaintext, counted</small></h2>
+      <div class="cfgbox"><dl class="kv" id="lops"></dl></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -173,7 +220,7 @@ const $ = id => document.getElementById(id);
 const PHASES = [
   ["0", "Scope &amp; encoding", true],
   ["1", "ANN baseline", true],
-  ["2", "LIF neurons", false],
+  ["2", "LIF neurons", true],
   ["3", "STDP", false],
   ["4", "Readout", false],
   ["5+", "Secure MPC", false],
@@ -184,7 +231,7 @@ let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, 
 function renderChips() {
   $('phases').innerHTML = PHASES.map(([n, name, built]) => {
     if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
-    const done = n === '0' || (n === '1' && ANN.result);
+    const done = n === '0' || n === '2' || (n === '1' && ANN.result);
     return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
   }).join('');
 }
@@ -193,10 +240,11 @@ $('phases').addEventListener('click', e => {
 });
 function setView(v) {
   view = v;
-  [0, 1].forEach(i => $('view-' + i).hidden = i !== v);
-  $('controls-0').hidden = v !== 0;
+  [0, 1, 2].forEach(i => $('view-' + i).hidden = i !== v);
+  $('controls-0').hidden = v === 1;
   renderChips();
   if (v === 1) pollAnn();
+  if (v === 2) loadLif();
   requestAnimationFrame(draw);
 }
 
@@ -231,6 +279,7 @@ async function load() {
   $('label-line').innerHTML = `Test image #${D.index}, true label <b class="mono">${D.label}</b>. A pixel spikes when a random number is below its intensity.`;
   drawStats();
   draw();
+  if (view === 2) loadLif();
 }
 
 function drawStats() {
@@ -349,6 +398,185 @@ function drawBars() {
   const every = Math.max(1, Math.ceil(T / 6));
   for (let t = 0; t < T; t += every) c.fillText(t, L + t * cw + cw / 2, h - B + 3);
 }
+
+// ---------------- Phase 2: LIF hidden layer ----------------
+let L = null, inSp = null, hidSp = null, selN = 0, lifBeta = null, lifThr = null, lnetGeo = null, lifTimer = 0;
+
+function showErr(e) {
+  const m = e && e.message ? e.message : String(e);
+  $('banner').textContent = m === 'not found'
+    ? 'The server does not know this feature yet. Stop it (Ctrl+C) and start it again: .venv/bin/python src/app_server.py'
+    : m.includes('fetch') ? 'Cannot reach the server. Is it running? .venv/bin/python src/app_server.py' : m;
+  $('banner').hidden = false;
+}
+const hideErr = () => { $('banner').hidden = true; };
+
+async function loadLif() {
+  if (!CFG) return;
+  if (lifBeta === null) { lifBeta = CFG.neuron.beta; lifThr = CFG.neuron.threshold; }
+  try { L = await api('/api/lif/run', {index: +$('index').value, resample, beta: lifBeta, threshold: lifThr}); }
+  catch (e) { showErr(e); return; }
+  hideErr();
+  const T = L.T, H = CFG.architecture.num_hidden, N = CFG.architecture.num_inputs;
+  inSp = new Uint8Array(T * N); hidSp = new Uint8Array(T * H);
+  for (const [t, i] of L.input_spikes) inSp[t * N + i] = 1;
+  for (const [t, j] of L.hidden_spikes) hidSp[t * H + j] = 1;
+  $('index').value = L.index;
+  $('step').max = T - 1;
+  if (step > T - 1) step = T - 1;
+  $('l-beta').value = lifBeta; $('l-thr').value = lifThr;
+  $('l-beta-o').textContent = (+lifBeta).toFixed(2); $('l-thr-o').textContent = lifThr;
+  $('l-cfg-line').textContent = `config file: beta ${CFG.neuron.beta}, threshold ${CFG.neuron.threshold}, reset "${CFG.neuron.reset}". Weights are random for now (learning starts in Phase 3).`;
+  drawLifStats();
+  draw();
+}
+
+function drawDecay() {
+  const T = CFG.simulation.num_steps, b = +lifBeta, thr = +lifThr;
+  const {c, w, h} = fit($('l-decay'));
+  const Lm = 6, B = 12, bw = (w - Lm - 4) / T;
+  c.font = '9.5px ' + css('--mono'); c.textBaseline = 'top'; c.textAlign = 'left'; c.fillStyle = css('--muted');
+  c.fillText('memory left after k steps: 100% at k=0', Lm, 0);
+  for (let k = 0; k < T; k++) {
+    const v = Math.pow(b, k), bh = v * (h - B - 12);
+    c.fillStyle = css('--input'); c.globalAlpha = 0.85;
+    c.fillRect(Lm + k * bw + 1, h - B - bh, Math.max(1, bw - 2), bh);
+  }
+  c.globalAlpha = 1; c.fillStyle = css('--muted'); c.textAlign = 'right'; c.fillText(`k=${T - 1}: ${(Math.pow(b, T - 1) * 100).toFixed(0)}%`, w - 4, h - B + 1);
+  const tau = -1 / Math.log(b), half = Math.log(0.5) / Math.log(b), need = thr * (1 - b);
+  let txt = `time constant ${tau.toFixed(1)} steps, half-life ${half.toFixed(1)} steps. Constant input I settles at ${(1 / (1 - b)).toFixed(1)} × I. ` +
+            `To ever reach the threshold the average input must be at least ${need.toFixed(1)} per step.`;
+  if (L) txt += ` This image: ${L.mean_current} per neuron per step (${L.mean_current >= need ? 'enough on average' : 'too weak on average'}).`;
+  $('l-decay-txt').textContent = txt;
+}
+
+function drawLifStats() {
+  const f = n => n.toLocaleString('en-US');
+  const items = [
+    [f(L.total_hidden_spikes), 'hidden spikes in total'],
+    [L.firing_rate.toFixed(3), 'spikes per neuron per step'],
+    [L.neurons_fired + ' / ' + CFG.architecture.num_hidden, 'hidden neurons that fired'],
+    [f(L.input_spike_count), 'input spikes (from Phase 0)'],
+  ];
+  $('lstats').innerHTML = items.map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('');
+  const o = L.ops;
+  $('lops').innerHTML = [
+    ['threshold checks', f(o.threshold_checks) + '  (T × hidden)'],
+    ['membrane updates', f(o.membrane_updates) + '  (T × hidden)'],
+    ['synaptic adds, dense', f(o.dense_synaptic_adds) + '  (T × 784 × hidden)'],
+    ['synaptic adds, event-driven', f(o.event_driven_synaptic_adds) + '  (input spikes × hidden)'],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+function drawLifNet() {
+  const {c, w, h} = fit($('lnet'));
+  const A = CFG.architecture, H = A.num_hidden, lab = 18;
+  const blk = Math.max(40, Math.min(h - lab - 8, w * 0.28)), top = (h - lab - blk) / 2;
+  const inX = w * 0.04, hidX = w * 0.43, hidSz = blk * 0.8, outX = w * 0.88;
+  const hidTop = (h - lab - hidSz) / 2;
+  const outPts = Array.from({length: A.num_outputs}, (_, k) => [outX, 10 + (h - lab - 20) * k / (A.num_outputs - 1)]);
+  c.lineWidth = 1;
+  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  c.strokeStyle = 'rgba(74,163,255,.10)';
+  for (let k = 0; k < 90; k++) { c.beginPath(); c.moveTo(inX + blk, top + rnd() * blk); c.lineTo(hidX, hidTop + rnd() * hidSz); c.stroke(); }
+  c.strokeStyle = 'rgba(240,96,122,.08)';
+  for (let k = 0; k < 70; k++) { const o = outPts[Math.floor(rnd() * outPts.length)]; c.beginPath(); c.moveTo(hidX + hidSz, hidTop + rnd() * hidSz); c.lineTo(o[0], o[1]); c.stroke(); }
+  const cell = blk / 28;
+  for (let i = 0; i < 784; i++) {
+    const x = inX + (i % 28) * cell, y = top + Math.floor(i / 28) * cell;
+    c.fillStyle = inSp[step * 784 + i] ? css('--spike') : `rgba(74,163,255,${0.12 + 0.5 * L.image[i] / 255})`;
+    c.beginPath(); c.arc(x + cell / 2, y + cell / 2, cell * 0.38, 0, 7); c.fill();
+  }
+  const side = Math.ceil(Math.sqrt(H)), hc = hidSz / side;
+  lnetGeo = {x: hidX, y: hidTop, hc, side, H};
+  for (let k = 0; k < H; k++) {
+    const cx = hidX + (k % side + .5) * hc, cy = hidTop + (Math.floor(k / side) + .5) * hc;
+    const frac = Math.max(0, Math.min(1, L.membrane[step][k] / L.threshold)), fired = hidSp[step * H + k];
+    c.fillStyle = fired ? css('--spike') : `rgba(45,212,164,${0.15 + 0.75 * frac})`;
+    c.beginPath(); c.arc(cx, cy, hc * (fired ? 0.4 : 0.3), 0, 7); c.fill();
+    if (k === selN) { c.strokeStyle = css('--ink'); c.lineWidth = 1.5; c.beginPath(); c.arc(cx, cy, hc * 0.46, 0, 7); c.stroke(); c.lineWidth = 1; }
+  }
+  c.font = '11px ' + css('--mono'); c.textBaseline = 'middle';
+  outPts.forEach(([x, y], k) => {
+    c.fillStyle = 'rgba(240,96,122,.4)'; c.beginPath(); c.arc(x, y, 5, 0, 7); c.fill();
+    c.fillStyle = css('--muted'); c.textAlign = 'left'; c.fillText(k, x + 11, y);
+  });
+  c.fillStyle = css('--muted'); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.fillText(`Input · ${A.num_inputs}`, inX + blk / 2, h - 3);
+  c.fillText(`Hidden · ${H} LIF`, hidX + hidSz / 2, h - 3);
+  c.fillText(`Output · ${A.num_outputs}`, outX, h - 3);
+}
+
+function drawLifMem() {
+  const {c, w, h} = fit($('lmem')), T = L.T, H = CFG.architecture.num_hidden;
+  $('lmem-title').innerHTML = `Membrane potential <small>hidden neuron #${selN} · ${hidSp.reduce((a, v, i) => a + (i % H === selN ? v : 0), 0)} spikes</small>`;
+  const u = L.membrane.map(r => r[selN]);
+  const Lm = 40, B = 16, R = 6, Tp = 8, pw = w - Lm - R, ph = h - B - Tp, cw = pw / T;
+  const mx = Math.max(L.threshold * 1.15, ...u), mn = 0;
+  const X = t => Lm + t * cw + cw / 2, Y = v => Tp + ph - (v - mn) / (mx - mn) * ph;
+  c.font = '10px ' + css('--mono'); c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (let k = 0; k <= 4; k++) { const v = mn + (mx - mn) * k / 4, y = Y(v);
+    c.fillStyle = css('--muted'); c.fillText(v.toFixed(0), Lm - 5, y);
+    c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(Lm, y); c.lineTo(Lm + pw, y); c.stroke(); }
+  c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = css('--muted');
+  const every = Math.max(1, Math.ceil(T / 12));
+  for (let t = 0; t < T; t += every) c.fillText(t, X(t), h - B + 3);
+  c.fillStyle = 'rgba(139,92,246,.22)'; c.fillRect(Lm + step * cw, Tp, cw, ph);
+  c.strokeStyle = css('--thr'); c.lineWidth = 1.5; c.setLineDash([6, 4]);
+  c.beginPath(); c.moveTo(Lm, Y(L.threshold)); c.lineTo(Lm + pw, Y(L.threshold)); c.stroke(); c.setLineDash([]);
+  c.strokeStyle = css('--input'); c.lineWidth = 2; c.beginPath();
+  u.forEach((v, t) => t ? c.lineTo(X(t), Y(v)) : c.moveTo(X(t), Y(v))); c.stroke(); c.lineWidth = 1;
+  c.fillStyle = css('--spike');
+  u.forEach((v, t) => { if (hidSp[t * H + selN]) { c.beginPath(); c.arc(X(t), Y(v), 4, 0, 7); c.fill(); } });
+}
+
+function drawLifRaster() {
+  const {c, w, h} = fit($('lras')), T = L.T, H = CFG.architecture.num_hidden;
+  const Lm = 34, B = 16, R = 4, Tp = 3, pw = w - Lm - R, ph = h - B - Tp, cw = pw / T, rh = ph / H;
+  c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted'); c.strokeStyle = css('--line');
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  [0, 25, 50, 75, 99].forEach(p => { const y = Tp + (p + .5) * rh; c.fillText(p, Lm - 4, y); });
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  const every = Math.max(1, Math.ceil(T / 12));
+  for (let t = 0; t < T; t += every) c.fillText(t, Lm + t * cw + cw / 2, h - B + 3);
+  c.fillStyle = 'rgba(139,92,246,.22)'; c.fillRect(Lm + step * cw, Tp, cw, ph);
+  c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(Lm, Tp + selN * rh, pw, Math.max(1, rh));
+  c.fillStyle = css('--hidden');
+  for (let t = 0; t < T; t++) for (let j = 0; j < H; j++)
+    if (hidSp[t * H + j]) c.fillRect(Lm + t * cw + cw * .15, Tp + j * rh, cw * .7, Math.max(1.5, rh * .8));
+}
+
+function drawLifBars() {
+  const {c, w, h} = fit($('lbars')), T = L.T, v = L.hidden_per_step;
+  const Lm = 28, B = 16, Tp = 6, pw = w - Lm - 2, ph = h - B - Tp, cw = pw / T, mx = Math.max(...v, 1);
+  c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted'); c.textAlign = 'right'; c.textBaseline = 'middle';
+  c.fillText(mx, Lm - 4, Tp); c.fillText(0, Lm - 4, Tp + ph);
+  for (let t = 0; t < T; t++) {
+    const bh = v[t] / mx * ph;
+    c.fillStyle = t === step ? css('--accent') : css('--hidden');
+    c.fillRect(Lm + t * cw + 1, Tp + ph - bh, Math.max(1, cw - 2), bh);
+  }
+  c.fillStyle = css('--muted'); c.textAlign = 'center'; c.textBaseline = 'top';
+  const every = Math.max(1, Math.ceil(T / 6));
+  for (let t = 0; t < T; t += every) c.fillText(t, Lm + t * cw + cw / 2, h - B + 3);
+}
+
+function drawLif() { if (!L) return; $('step').value = step; $('step-o').textContent = step; drawLifNet(); drawLifMem(); drawLifRaster(); drawLifBars(); drawDecay(); }
+
+$('lnet').addEventListener('click', e => {
+  if (!lnetGeo) return;
+  const r = $('lnet').getBoundingClientRect(), g = lnetGeo;
+  const col = Math.floor((e.clientX - r.left - g.x) / g.hc), row = Math.floor((e.clientY - r.top - g.y) / g.hc);
+  if (col < 0 || row < 0 || col >= g.side || row >= g.side) return;
+  const k = row * g.side + col;
+  if (k < g.H) { selN = k; drawLif(); }
+});
+['l-beta', 'l-thr'].forEach(id => $(id).addEventListener('input', () => {
+  lifBeta = +$('l-beta').value; lifThr = +$('l-thr').value;
+  $('l-beta-o').textContent = lifBeta.toFixed(2); $('l-thr-o').textContent = lifThr;
+  drawDecay();
+  clearTimeout(lifTimer); lifTimer = setTimeout(loadLif, 150);
+}));
 
 // ---------------- Phase 1: ANN baseline ----------------
 async function pollAnn() {
@@ -482,11 +710,12 @@ function drawAnn() {
   ].map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('');
 }
 
-$('ann-train').onclick = async () => { await api('/api/ann/train', {}); pollAnn(); };
+$('ann-train').onclick = async () => { try { await api('/api/ann/train', {}); hideErr(); } catch (e) { showErr(e); return; } pollAnn(); };
 $('ann-stop').onclick = async () => { await api('/api/ann/stop', {}); };
 
 function draw() {
   if (view === 1) { drawAnn(); return; }
+  if (view === 2) { drawLif(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();

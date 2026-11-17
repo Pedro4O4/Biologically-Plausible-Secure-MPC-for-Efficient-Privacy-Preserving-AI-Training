@@ -1,6 +1,7 @@
 """
 Local dashboard for the thesis project. It only shows what has been built so far
-(Phase 0 = config + rate encoding, Phase 1 = plaintext ANN baseline) and grows one
+(Phase 0 = config + rate encoding, Phase 1 = plaintext ANN baseline,
+Phase 2 = LIF hidden layer) and grows one
 phase at a time.
 
 Run:   .venv/bin/python src/app_server.py      then open http://127.0.0.1:8000
@@ -21,6 +22,7 @@ from ann_model import train_ann
 from config_loader import load_config
 from data import load_mnist, make_splits
 from encoding import rate_encode
+from lif_model import LIFLayer
 
 torch.set_num_threads(4)
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +32,8 @@ _encode_lock = threading.Lock()
 
 CONFIG = load_config()
 IMAGES, LABELS = load_mnist(train=False)
+LIF = LIFLayer(CONFIG["architecture"]["num_inputs"], CONFIG["architecture"]["num_hidden"],
+               CONFIG["neuron"], CONFIG["seed"])
 
 # ---------- Phase 1: ANN baseline job ----------
 ANN_JOB = {"running": False, "epoch": 0, "total": CONFIG["ann"]["epochs"], "history": [], "error": None}
@@ -87,13 +91,52 @@ def info():
     }
 
 
-def sample(index, resample):
+def _encode(index, resample):
+    """Same image + same resample number always gives the same spike train."""
     index = int(index) % len(IMAGES)
     T = CONFIG["simulation"]["num_steps"]
-    n_in = CONFIG["architecture"]["num_inputs"]
     with _encode_lock:
         torch.manual_seed(index * 1000 + int(resample))
         spikes = rate_encode(IMAGES[index], T)          # (T, 784), the project's own function
+    return index, spikes
+
+
+def lif_run(index, resample, beta=None, threshold=None):
+    """Phase 2: run the input spike train through the hidden LIF layer."""
+    index, spikes = _encode(index, resample)
+    T, n_in = spikes.shape
+    n_hid = CONFIG["architecture"]["num_hidden"]
+    out = LIF.run(spikes, beta, threshold)
+    hs = out["spikes"]
+    n_input_spikes = int(spikes.sum())
+    total = int(hs.sum())
+    return {
+        "index": index, "label": int(LABELS[index]), "T": T,
+        "beta": LIF.beta if beta is None else beta,
+        "threshold": LIF.threshold if threshold is None else threshold,
+        "image": (IMAGES[index] * 255).round().int().tolist(),
+        "input_spikes": torch.nonzero(spikes).tolist(),
+        "hidden_spikes": torch.nonzero(hs).tolist(),                       # [[t, neuron], ...]
+        "membrane": [[round(v, 2) for v in row] for row in out["membrane"].tolist()],
+        "hidden_per_step": hs.sum(dim=1).int().tolist(),
+        "total_hidden_spikes": total,
+        "firing_rate": total / (T * n_hid),                                # spikes per neuron per step
+        "neurons_fired": int((hs.sum(dim=0) > 0).sum()),
+        "input_spike_count": n_input_spikes,
+        "mean_current": round(float(out["current"].mean()), 2),               # avg input per neuron per step
+        "ops": {                                                           # counted analytically, plaintext
+            "threshold_checks": T * n_hid,
+            "membrane_updates": T * n_hid,
+            "dense_synaptic_adds": T * n_in * n_hid,
+            "event_driven_synaptic_adds": n_input_spikes * n_hid,
+        },
+    }
+
+
+def sample(index, resample):
+    index, spikes = _encode(index, resample)
+    T = CONFIG["simulation"]["num_steps"]
+    n_in = CONFIG["architecture"]["num_inputs"]
     pairs = torch.nonzero(spikes).tolist()              # [[t, pixel], ...]
     per_step = spikes.sum(dim=1).int().tolist()
     return {
@@ -143,6 +186,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/api/sample":
                 return self._json(sample(body.get("index", 0), body.get("resample", 0)))
+            if self.path == "/api/lif/run":
+                return self._json(lif_run(body.get("index", 0), body.get("resample", 0),
+                                          body.get("beta"), body.get("threshold")))
             if self.path == "/api/ann/train":
                 return self._json({"started": ann_start()})
             if self.path == "/api/ann/stop":
