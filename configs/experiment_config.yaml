@@ -1,0 +1,20 @@
+# ============================================================
+# Experiment Config — Phase 0: Scope Locking
+# Topic II: Biologically Plausible Secure MPC for SNN Training
+# ============================================================
+# This file is the single source of truth for architecture
+# and simulation parameters. Nothing below should be hard-coded
+# again inside the model/training scripts.
+
+architecture:
+  num_inputs: 784      # 28x28 MNIST pixels, flattened. Fixed by the dataset.
+  num_hidden: 100       # LIF neurons in the hidden (STDP-learned) layer.
+  num_outputs: 10       # 10 digit classes (0-9). Fixed by the task.
+
+simulation:
+  # Fixed number of timesteps every sample is run for, regardless of
+  # the image's content. Must NEVER depend on input data (see note below).
+  num_steps: 25
+
+encoding:
+  method: "rate"   # Pixel intensity -> spike probability per timestep.
