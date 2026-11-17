@@ -1,13 +1,13 @@
 """
 Local dashboard for the thesis project. It only shows what has been built so far
 (Phase 0 = config + rate encoding, Phase 1 = plaintext ANN baseline,
-Phase 2 = LIF hidden layer, Phase 3 = STDP learning) and grows one
+Phase 2 = LIF hidden layer, Phase 3 = STDP learning, Phase 4 = readout + full SNN pipeline) and grows one
 phase at a time.
 
 Run:   .venv/bin/python src/app_server.py      then open http://127.0.0.1:8000
 The page asks this server for real values computed by the project's own code
 (config_loader.py, data.py, encoding.py, ann_model.py). Training only starts when
-you press a Train button (Phase 1 and Phase 3 tabs).
+you press a Train button (Phase 1, 3 and 4 tabs).
 """
 
 import base64
@@ -25,6 +25,7 @@ from config_loader import load_config
 from data import load_mnist, make_splits
 from encoding import rate_encode
 from lif_model import LIFLayer
+from readout import LinearReadout, classification_metrics
 from stdp import STDPTrainer
 
 torch.set_num_threads(4)
@@ -32,6 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = Path(__file__).resolve().parent / "web"
 ANN_DIR = ROOT / "results" / "ann"
 STDP_DIR = ROOT / "results" / "stdp"
+READOUT_DIR = ROOT / "results" / "readout"
 _encode_lock = threading.Lock()
 
 CONFIG = load_config()
@@ -176,6 +178,128 @@ def stdp_weights():
             "theta": theta.tolist(), "version": version}
 
 
+# ---------- Phase 4: readout + full SNN pipeline ----------
+RD_JOB = {"running": False, "phase": "", "progress": 0.0, "error": None}
+RD_RESULT = None
+RD_MODEL = None            # the trained LinearReadout (SNN features)
+
+if (READOUT_DIR / "metrics.json").exists() and (READOUT_DIR / "model.pt").exists():
+    RD_RESULT = json.loads((READOUT_DIR / "metrics.json").read_text())
+    _rk = torch.load(READOUT_DIR / "model.pt")
+    RD_MODEL = LinearReadout(CONFIG["architecture"]["num_hidden"], CONFIG["architecture"]["num_outputs"])
+    RD_MODEL.W, RD_MODEL.b = _rk["W"], _rk["b"]
+
+
+def _encode_batch(X, seed):
+    """(B, 784) images -> (T, B, 784) spike trains, reproducible for a given seed."""
+    T = CONFIG["simulation"]["num_steps"]
+    with _encode_lock:
+        torch.manual_seed(seed)
+        return torch.stack([rate_encode(x, T) for x in X], dim=1)
+
+
+def _features(layer, X, seed):
+    """Hidden spike counts / T for every image, plus activity totals."""
+    T, H = CONFIG["simulation"]["num_steps"], CONFIG["architecture"]["num_hidden"]
+    out, in_total, hid_total, ever = [], 0.0, 0.0, torch.zeros(H, dtype=torch.bool)
+    for i in range(0, len(X), 500):
+        spikes = _encode_batch(X[i:i + 500], seed + i)
+        counts = layer.spike_counts(spikes, threshold=CONFIG["learning"]["threshold"])
+        in_total += float(spikes.sum())
+        hid_total += float(counts.sum())
+        ever |= counts.sum(dim=0) > 0
+        out.append(counts / T)
+    return torch.cat(out), in_total, hid_total, ever
+
+
+def _fit_and_test(layer, splits):
+    (Xtr, ytr), (Xva, yva), (Xte, yte) = splits["train"], splits["val"], splits["test"]
+    H, n_out, r = CONFIG["architecture"]["num_hidden"], CONFIG["architecture"]["num_outputs"], CONFIG["readout"]
+    f_tr, _, _, _ = _features(layer, Xtr, 1_000_000)
+    f_va, _, _, _ = _features(layer, Xva, 2_000_000)
+    f_te, in_total, hid_total, ever = _features(layer, Xte, 3_000_000)
+    ro = LinearReadout(H, n_out)
+    history = ro.fit(f_tr, ytr, f_va, yva, r["epochs"], r["lr"], r["record_every"])
+    metrics = classification_metrics(yte, ro.predict(f_te), n_out)
+    return ro, history, metrics, (in_total, hid_total, ever)
+
+
+def _readout_run():
+    global RD_RESULT, RD_MODEL, _splits
+    try:
+        if STDP_RESULT is None:
+            raise RuntimeError("Train the STDP layer first (Phase 3 tab).")
+        if STDP_JOB["running"]:
+            raise RuntimeError("STDP training is still running.")
+        if _splits is None:
+            _splits = make_splits(CONFIG)
+        t0 = time.time()
+        T, H, n_in = CONFIG["simulation"]["num_steps"], CONFIG["architecture"]["num_hidden"], CONFIG["architecture"]["num_inputs"]
+        n_test = len(_splits["test"][1])
+
+        RD_JOB.update(phase="SNN features and readout", progress=0.05)
+        with _stdp_lock:
+            layer = LIFLayer(n_in, H, CONFIG["neuron"], CONFIG["seed"])
+            layer.W, layer.theta = STDP_LAYER.W.clone(), STDP_LAYER.theta.clone()
+        ro, history, metrics, (in_total, hid_total, ever) = _fit_and_test(layer, _splits)
+
+        RD_JOB.update(phase="Control: untrained hidden layer", progress=0.55)
+        control = LIFLayer(n_in, H, CONFIG["neuron"], CONFIG["seed"])
+        _, _, control_metrics, _ = _fit_and_test(control, _splits)
+
+        avg_in, avg_hid = in_total / n_test, hid_total / n_test
+        result = {
+            "n_test": n_test, "seconds": round(time.time() - t0, 1),
+            "history": history, "test": metrics,
+            "last": history[-1],
+            "control": {"accuracy": control_metrics["accuracy"]},
+            "activity": {"avg_input_spikes": avg_in, "avg_hidden_spikes": avg_hid,
+                         "firing_rate": hid_total / (n_test * T * H), "neurons_ever_fired": int(ever.sum()),
+                         "T": T, "hidden": H},
+            "ops_per_image": {"encoder_comparisons": T * n_in, "threshold_checks": T * H, "membrane_updates": T * H,
+                              "dense_synaptic_adds": T * n_in * H, "event_driven_synaptic_adds": round(avg_in * H),
+                              "readout_multiplications": H * CONFIG["architecture"]["num_outputs"]},
+        }
+        READOUT_DIR.mkdir(parents=True, exist_ok=True)
+        torch.save({"W": ro.W.detach(), "b": ro.b.detach()}, READOUT_DIR / "model.pt")
+        (READOUT_DIR / "metrics.json").write_text(json.dumps(result))
+        RD_MODEL, RD_RESULT = ro, result
+        RD_JOB["progress"] = 1.0
+    except Exception as e:
+        RD_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        RD_JOB["running"] = False
+
+
+def readout_start():
+    global RD_RESULT
+    if RD_JOB["running"]:
+        return False
+    RD_RESULT = None
+    RD_JOB.update(running=True, phase="", progress=0.0, error=None)
+    threading.Thread(target=_readout_run, daemon=True).start()
+    return True
+
+
+def readout_status():
+    return {"job": dict(RD_JOB), "result": RD_RESULT, "stdp_ready": STDP_RESULT is not None}
+
+
+def readout_predict(index, resample):
+    """The full pipeline on one image: encode -> hidden LIF layer (STDP weights) -> readout."""
+    if RD_MODEL is None:
+        raise RuntimeError("Train the readout first (Phase 4 tab).")
+    index, spikes = _encode(index, resample)
+    with _stdp_lock:
+        counts = STDP_LAYER.spike_counts(spikes[:, None, :], threshold=CONFIG["learning"]["threshold"])[0]
+    probs = torch.softmax(RD_MODEL.scores(counts[None, :] / spikes.shape[0])[0], dim=0)
+    return {"index": index, "label": int(LABELS[index]), "pred": int(probs.argmax()),
+            "probs": [round(v, 4) for v in probs.tolist()],
+            "image": (IMAGES[index] * 255).round().int().tolist(),
+            "input_spikes": int(spikes.sum()), "hidden_spikes": int(counts.sum()),
+            "neurons_fired": int((counts > 0).sum())}
+
+
 def stdp_run(index, resample):
     """Which hidden neurons answer to this image (winner-take-all forward pass)."""
     index, spikes = _encode(index, resample)
@@ -280,6 +404,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(info())
         if path == "/api/ann/status":
             return self._json(ann_status())
+        if path == "/api/readout/status":
+            return self._json(readout_status())
         if path == "/api/stdp/status":
             return self._json(stdp_status())
         if path == "/api/stdp/weights":
@@ -300,6 +426,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/lif/run":
                 return self._json(lif_run(body.get("index", 0), body.get("resample", 0),
                                           body.get("beta"), body.get("threshold")))
+            if self.path == "/api/readout/train":
+                return self._json({"started": readout_start()})
+            if self.path == "/api/readout/predict":
+                return self._json(readout_predict(body.get("index", 0), body.get("resample", 0)))
             if self.path == "/api/stdp/train":
                 return self._json({"started": stdp_start()})
             if self.path == "/api/stdp/stop":

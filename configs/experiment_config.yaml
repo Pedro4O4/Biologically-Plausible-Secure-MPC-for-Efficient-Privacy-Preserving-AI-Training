@@ -58,3 +58,11 @@ learning:
   mu: 1.0              # Soft-bound exponent.
   theta_plus: 0.5      # Threshold bonus a neuron gets each time it wins.
   epochs: 1            # Passes over the training images (data.num_train of them).
+
+# ------------------------------------------------------------
+# Phase 4: supervised readout on the STDP hidden spike counts
+# ------------------------------------------------------------
+readout:
+  epochs: 300          # Full-batch Adam steps (the hidden layer stays frozen).
+  lr: 0.05
+  record_every: 10     # How often the convergence curve gets a point.

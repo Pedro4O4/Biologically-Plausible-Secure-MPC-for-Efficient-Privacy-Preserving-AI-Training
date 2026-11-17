@@ -78,3 +78,26 @@ class LIFLayer:
                 u = u * (1 - s)
         return {"spikes": torch.stack(spikes), "membrane": torch.stack(membrane),
                 "current": torch.stack(current)}
+
+    @torch.no_grad()
+    def spike_counts(self, spikes_in, threshold=None):
+        """
+        Winner-take-all forward pass for a whole batch at once (same rule as run(..., wta=True)).
+        spikes_in: (T, B, num_inputs). Returns hidden spike counts (B, hidden).
+        """
+        threshold = self.threshold if threshold is None else threshold
+        T, B, _ = spikes_in.shape
+        thr = threshold + self.theta
+        u = torch.zeros(B, self.n_hid)
+        counts = torch.zeros(B, self.n_hid)
+        rows = torch.arange(B)
+        for t in range(T):
+            u = self.beta * u + spikes_in[t] @ self.W
+            fired = u >= thr
+            winner = torch.where(fired, u - thr, torch.full_like(u, -1e9)).argmax(1)
+            any_fired = fired.any(1)
+            s = torch.zeros_like(u)
+            s[rows, winner] = any_fired.float()
+            counts += s
+            u = torch.where(any_fired[:, None], torch.zeros_like(u), u)
+        return counts

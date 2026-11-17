@@ -245,6 +245,43 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <div class="note" id="st-who-note"></div>
     </section>
   </div>
+
+  <div class="grid" id="view-4" hidden>
+    <section class="panel c4">
+      <h2>Readout <small>the only step that uses labels</small></h2>
+      <div class="trainbar">
+        <button id="rd-train" class="primary" type="button">Train readout</button>
+        <span id="rd-state" class="mono"></span>
+      </div>
+      <div class="progress"><div id="rd-prog"></div></div>
+      <div class="cfgbox"><dl class="kv" id="rd-cfg"></dl></div>
+      <div class="note">The STDP layer stays frozen. A softmax classifier learns which hidden neurons mean which digit, from each neuron's spike count divided by T. It is run a second time on the untrained random hidden layer, to show what STDP added.</div>
+    </section>
+    <section class="panel c4">
+      <h2>Convergence <small>readout accuracy per training step</small></h2>
+      <div class="cv"><canvas id="rd-acc"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>train</span><span><i style="background:var(--spike)"></i>validation</span></div>
+    </section>
+    <section class="panel c4">
+      <h2>Full pipeline on this image <small>encode, hidden LIF layer, readout</small></h2>
+      <div class="cv"><canvas id="rd-pipe"></canvas></div>
+      <div class="note" id="rd-pipe-note"></div>
+    </section>
+    <section class="panel c4">
+      <h2>Test accuracy <small id="rd-test-sub"></small></h2>
+      <div class="big" id="rd-test-acc">–</div>
+      <div class="note" id="rd-test-note">Train the readout to see the test accuracy.</div>
+      <div class="cv"><canvas id="rd-cmp"></canvas></div>
+    </section>
+    <section class="panel c4">
+      <h2>Confusion matrix <small>rows = true digit, columns = predicted</small></h2>
+      <div class="cv"><canvas id="rd-conf"></canvas></div>
+    </section>
+    <section class="panel c4">
+      <h2>Activity and operations per test image <small>plaintext, counted</small></h2>
+      <div class="cfgbox"><dl class="kv" id="rd-ops"></dl></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -255,7 +292,7 @@ const PHASES = [
   ["1", "ANN baseline", true],
   ["2", "LIF neurons", true],
   ["3", "STDP", true],
-  ["4", "Readout", false],
+  ["4", "Readout", true],
   ["5+", "Secure MPC", false],
 ];
 let view = 0;
@@ -264,7 +301,7 @@ let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, 
 function renderChips() {
   $('phases').innerHTML = PHASES.map(([n, name, built]) => {
     if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
-    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result);
+    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result) || (n === '4' && RD.result);
     return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
   }).join('');
 }
@@ -273,12 +310,13 @@ $('phases').addEventListener('click', e => {
 });
 function setView(v) {
   view = v;
-  [0, 1, 2, 3].forEach(i => $('view-' + i).hidden = i !== v);
+  [0, 1, 2, 3, 4].forEach(i => $('view-' + i).hidden = i !== v);
   $('controls-0').hidden = v === 1;
   renderChips();
   if (v === 1) pollAnn();
   if (v === 2) loadLif();
   if (v === 3) { pollStdp(); loadStdpRun(); }
+  if (v === 4) { pollAnn(); pollReadout(); loadRdPredict(); }
   requestAnimationFrame(draw);
 }
 
@@ -315,6 +353,7 @@ async function load() {
   draw();
   if (view === 2) loadLif();
   if (view === 3) loadStdpRun();
+  if (view === 4) loadRdPredict();
 }
 
 function drawStats() {
@@ -613,6 +652,116 @@ $('lnet').addEventListener('click', e => {
   clearTimeout(lifTimer); lifTimer = setTimeout(loadLif, 150);
 }));
 
+// ---------------- Phase 4: readout + full pipeline ----------------
+let RD = {job: {running: false, phase: '', progress: 0, error: null}, result: null, stdp_ready: false}, RP = null, rdTimer = null;
+
+async function pollReadout() {
+  try { RD = await api('/api/readout/status'); } catch (e) { showErr(e); return; }
+  hideErr(); renderChips();
+  if (view === 4) drawReadout();
+  clearTimeout(rdTimer);
+  if (RD.job.running) rdTimer = setTimeout(pollReadout, 500);
+  else if (RD.result && !RP) loadRdPredict();
+}
+
+async function loadRdPredict() {
+  if (!CFG) return;
+  if (!RD.result) { RP = null; if (view === 4) drawReadout(); return; }
+  try { RP = await api('/api/readout/predict', {index: +$('index').value, resample}); } catch (e) { showErr(e); return; }
+  hideErr(); $('index').value = RP.index;
+  if (view === 4) drawReadout();
+}
+
+function drawPipeline() {
+  const {c, w, h} = fit($('rd-pipe'));
+  if (!RP) { emptyMsg(c, w, h, 'Train the readout to see predictions'); return; }
+  const lab = 16, tile = Math.max(40, Math.min(h - lab - 6, w * 0.28)), ty = (h - lab - tile) / 2;
+  c.imageSmoothingEnabled = false;
+  c.drawImage(tileCanvas(i => RP.image[i]), 4, ty, tile, tile);
+  c.fillStyle = css('--muted'); c.font = '10.5px ' + css('--mono'); c.textAlign = 'center'; c.textBaseline = 'top';
+  c.fillText(`digit ${RP.label}`, 4 + tile / 2, ty + tile + 3);
+  const bx = tile + 40, bw = (w - bx - 6) / 10, ph = h - lab - 12;
+  c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+  c.fillText('→', tile + 12, ty + tile / 2 + 4);
+  for (let k = 0; k < 10; k++) {
+    const p = RP.probs[k], bh = p * ph, x = bx + k * bw;
+    c.fillStyle = k === RP.pred ? (RP.pred === RP.label ? css('--hidden') : css('--output')) : css('--input');
+    c.globalAlpha = k === RP.pred ? 1 : 0.55; c.fillRect(x + 2, 8 + ph - bh, bw - 4, bh); c.globalAlpha = 1;
+    c.fillStyle = k === RP.label ? css('--spike') : css('--muted'); c.textAlign = 'center'; c.textBaseline = 'top';
+    c.fillText(k, x + bw / 2, h - lab + 2);
+  }
+  $('rd-pipe-note').textContent = `${RP.input_spikes} input spikes → ${RP.hidden_spikes} hidden spikes (${RP.neurons_fired} neurons) → predicted ${RP.pred} with ${(RP.probs[RP.pred] * 100).toFixed(0)}% confidence. True digit ${RP.label} (yellow). ${RP.pred === RP.label ? 'Correct.' : 'Wrong.'}`;
+}
+
+function drawCmp() {
+  const {c, w, h} = fit($('rd-cmp'));
+  const items = [
+    ['ANN (backprop)', ANN.result ? ANN.result.test.accuracy : null, css('--input')],
+    ['SNN (STDP + readout)', RD.result ? RD.result.test.accuracy : null, css('--hidden')],
+    ['untrained hidden + readout', RD.result ? RD.result.control.accuracy : null, css('--muted')],
+  ];
+  const B = 30, Tp = 10, lo = 0, ph = h - B - Tp, bw = w / items.length;
+  c.font = '10px ' + css('--mono'); c.textAlign = 'center';
+  items.forEach(([name, v, color], k) => {
+    const x = k * bw;
+    c.fillStyle = css('--muted'); c.textBaseline = 'top'; c.fillText(name, x + bw / 2, h - B + 4);
+    if (v === null) { c.textBaseline = 'middle'; c.fillText('not run', x + bw / 2, Tp + ph / 2); return; }
+    const bh = v * ph;
+    c.fillStyle = color; c.fillRect(x + bw * .2, Tp + ph - bh, bw * .6, bh);
+    c.fillStyle = css('--ink'); c.textBaseline = 'bottom'; c.fillText((v * 100).toFixed(1) + '%', x + bw / 2, Tp + ph - bh - 2);
+  });
+}
+
+function drawReadout() {
+  if (!CFG) return;
+  const job = RD.job, res = RD.result, f = x => x.toLocaleString('en-US'), R = CFG.readout;
+  $('rd-cfg').innerHTML = [
+    ['model', 'linear softmax'], ['input features', 'hidden spike count / T'], ['optimizer', 'adam, full batch'],
+    ['steps', R.epochs], ['learning rate', R.lr], ['train / val images', f(CFG.data.num_train) + ' / ' + f(CFG.data.num_val)], ['test images', '10,000'],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('rd-train').disabled = job.running;
+  $('rd-prog').style.width = (job.progress * 100) + '%';
+  $('rd-state').innerHTML = job.error ? `<span class="err">${job.error}</span>`
+    : job.running ? job.phase : res ? 'done' : RD.stdp_ready ? 'not trained yet' : 'train STDP first (Phase 3)';
+
+  const hist = res ? res.history : [], pts = Math.max(2, Math.ceil(R.epochs / R.record_every));
+  const acc = hist.flatMap(r => [r.train_acc, r.val_acc]);
+  lineChart('rd-acc', [{color: css('--input'), v: hist.map(r => r.train_acc)}, {color: css('--spike'), v: hist.map(r => r.val_acc)}], pts,
+    v => (v * 100).toFixed(0) + '%', acc.length ? Math.max(0, Math.floor(Math.min(...acc) * 20) / 20 - 0.02) : 0, 1);
+
+  if (res) {
+    $('rd-test-acc').textContent = (res.test.accuracy * 100).toFixed(2) + '%';
+    $('rd-test-sub').textContent = `${f(res.n_test)} untouched images`;
+    $('rd-test-note').textContent = `Macro F1 ${res.test.macro_f1.toFixed(3)}. Whole run took ${res.seconds} s.`;
+  } else { $('rd-test-acc').textContent = '–'; $('rd-test-sub').textContent = ''; $('rd-test-note').textContent = 'Train the readout to see the test accuracy.'; }
+  drawCmp();
+  drawConfusion(res && res.test.confusion, 'rd-conf');
+  drawPipeline();
+
+  const A = CFG.architecture, a = res && res.activity, o = res && res.ops_per_image;
+  const rows = [['kvhead', 'SNN, averaged over the test set']];
+  rows.push(['input spikes per image', a ? f(Math.round(a.avg_input_spikes)) : '–']);
+  rows.push(['hidden spikes per image', a ? a.avg_hidden_spikes.toFixed(1) : '–']);
+  rows.push(['firing rate (spikes / neuron / step)', a ? a.firing_rate.toFixed(4) : '–']);
+  rows.push(['hidden neurons that ever fired', a ? a.neurons_ever_fired + ' / ' + a.hidden : '–']);
+  rows.push(['timesteps T', CFG.simulation.num_steps]);
+  rows.push(['encoder comparisons', o ? f(o.encoder_comparisons) : '–']);
+  rows.push(['threshold checks', o ? f(o.threshold_checks) : '–']);
+  rows.push(['synaptic adds, dense', o ? f(o.dense_synaptic_adds) : '–']);
+  rows.push(['synaptic adds, event-driven', o ? f(o.event_driven_synaptic_adds) : '–']);
+  rows.push(['readout multiplications', o ? f(o.readout_multiplications) : '–']);
+  rows.push(['kvhead', 'ANN (Phase 1), per image']);
+  const cost = ANN.result ? ANN.result.cost : null;
+  rows.push(['multiplications', f(cost ? cost.multiplications_per_sample : A.num_inputs * A.num_hidden + A.num_hidden * A.num_outputs)]);
+  rows.push(['ReLU comparisons', f(cost ? cost.relu_comparisons_per_sample : A.num_hidden)]);
+  $('rd-ops').innerHTML = rows.map(([k, v]) => k === 'kvhead' ? `<div class="kvhead">${v}</div>` : `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+$('rd-train').onclick = async () => {
+  try { await api('/api/readout/train', {}); hideErr(); } catch (e) { showErr(e); return; }
+  RP = null; pollReadout();
+};
+
 // ---------------- Phase 3: STDP ----------------
 let ST = {job: {running: false, sample: 0, total: 0, history: [], error: null}, result: null, weights_version: 0};
 let STW = null, STTheta = null, stVer = -1, stTimer = null, SR = null, stWasRunning = false;
@@ -759,8 +908,8 @@ function lineChart(id, series, total, fmt, lo, hi) {
   c.lineWidth = 1;
 }
 
-function drawConfusion(conf) {
-  const {c, w, h} = fit($('ann-conf'));
+function drawConfusion(conf, id = 'ann-conf') {
+  const {c, w, h} = fit($(id));
   if (!conf) { emptyMsg(c, w, h, 'No result yet'); return; }
   const L = 22, Tp = 18, size = Math.min(w - L - 4, h - Tp - 4), cell = size / 10, ox = L + (w - L - 4 - size) / 2;
   c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted');
@@ -858,6 +1007,7 @@ function draw() {
   if (view === 1) { drawAnn(); return; }
   if (view === 2) { drawLif(); return; }
   if (view === 3) { drawStdp(); return; }
+  if (view === 4) { drawReadout(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();
@@ -883,7 +1033,7 @@ window.addEventListener('resize', redraw);
   const info = await api('/api/info');
   CFG = info.config; renderConfig(info);
   $('index').max = info.num_images - 1;
-  renderChips(); pollAnn(); pollStdp();
+  renderChips(); pollAnn(); pollStdp(); pollReadout();
   await load();
 })().catch(e => { document.body.insertAdjacentHTML('beforeend', `<pre style="color:#f0607a;padding:20px">${e.message}</pre>`); });
 </script>
