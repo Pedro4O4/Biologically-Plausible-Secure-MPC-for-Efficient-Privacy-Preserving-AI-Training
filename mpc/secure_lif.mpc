@@ -1,0 +1,101 @@
+# Phase 6: the Phase 2 LIF layer computed on secret shares (fixed point).
+#   compile:  ./compile.py -R 64 secure_lif.mpc <mode> <T> <n_in> <H> <beta> <threshold>
+#   party 0 (data owner)  gives the spike trains S (T x n_in, values 0/1) and H extra bits F
+#   party 1 (model owner) gives the weights W (n_in x H) and a membrane vector U0 (H)
+#
+# modes:
+#   full     T timesteps, then OPENS every spike, membrane value and current. VALIDATION ONLY:
+#            a real deployment would never open these.
+#   run      the same T timesteps, but opens only the total spike count (this is the real cost)
+#   base     share the inputs, open one value (the reference: cost of an operation = mode - base)
+#   current / leak / thresh / reset
+#            ONE timestep of that single operation on all H neurons
+mode = program.args[1]
+T, N, H = int(program.args[2]), int(program.args[3]), int(program.args[4])
+BETA, THR = float(program.args[5]), float(program.args[6])
+
+sfix.set_precision(16, 31)            # 16 fractional bits; values must stay below 2^15 = 32768
+
+S = sfix.Matrix(T, N)
+S.input_from(0)
+F = sint.Array(H)                     # H secret bits, only used by the "reset" benchmark
+F.input_from(0)
+W = sfix.Matrix(N, H)
+W.input_from(1)
+U0 = sfix.Array(H)
+U0.input_from(1)
+
+
+def one_step(u_vec, t):
+    """One timestep: current, leak + integrate, threshold, subtract-reset."""
+    cur = (S.get_part(t, 1) * W).get_vector()          # (1 x N) * (N x H): synaptic current
+    u_new = BETA * u_vec + cur                          # leak (public beta) + integrate
+    fired = u_new >= THR                                # H secret bits: threshold comparison
+    u_after = u_new - sfix(fired) * THR                 # reset: subtract threshold where it spiked
+    return cur, u_new, fired, u_after
+
+
+def run_all():
+    u = sfix.Array(H)
+    u.assign_all(0)
+    curs, mems, spks = sfix.Matrix(T, H), sfix.Matrix(T, H), sint.Matrix(T, H)
+
+    @for_range(T)
+    def _(t):
+        cur, u_new, fired, u_after = one_step(u.get_vector(), t)
+        curs[t].assign(cur)
+        mems[t].assign(u_new)
+        spks[t].assign(fired)
+        u.assign(u_after)
+    return curs, mems, spks
+
+
+if mode == 'full':
+    curs, mems, spks = run_all()
+
+    # spikes are opened as 0/1; membrane and current as the raw fixed-point integer (value * 2^16), so nothing is rounded
+    @for_range(T)
+    def _(t):
+        print_str('SPK %s:', t)
+
+        @for_range(H)
+        def _(j):
+            print_str(' %s', spks[t][j].reveal())
+        print_ln('')
+        print_str('MEM %s:', t)
+
+        @for_range(H)
+        def _(j):
+            print_str(' %s', mems[t][j].v.reveal())
+        print_ln('')
+        print_str('CUR %s:', t)
+
+        @for_range(H)
+        def _(j):
+            print_str(' %s', curs[t][j].v.reveal())
+        print_ln('')
+elif mode == 'run':
+    curs, mems, spks = run_all()
+    total = MemValue(sint(0))
+
+    @for_range(T)
+    def _(t):
+        total.iadd(spks[t].sum())
+    print_ln('RESULT %s', total.reveal())
+else:
+    u = U0.get_vector()
+    if mode == 'base':
+        res = u
+    elif mode == 'current':
+        res = (S.get_part(0, 1) * W).get_vector()
+    elif mode == 'leak':
+        res = BETA * u + u                   # same cost as beta*u + I (the addition is free)
+    elif mode == 'thresh':
+        res = sfix(u >= THR)
+    elif mode == 'reset':
+        res = u - sfix(F.get_vector()) * THR
+    else:
+        raise CompilerError('unknown mode ' + mode)
+    out = sfix.Array(H)
+    out.assign(res)
+    print_ln('RESULT %s', out.sum().reveal())

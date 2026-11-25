@@ -25,6 +25,9 @@ from config_loader import load_config
 from data import load_mnist, make_splits
 from encoding import rate_encode
 from lif_model import LIFLayer
+import mpc_lif
+import mpc_real
+import mpc_sim
 from readout import LinearReadout, classification_metrics
 from stdp import STDPTrainer
 
@@ -34,6 +37,7 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 ANN_DIR = ROOT / "results" / "ann"
 STDP_DIR = ROOT / "results" / "stdp"
 READOUT_DIR = ROOT / "results" / "readout"
+SLIF_DIR = ROOT / "results" / "mpc"
 _encode_lock = threading.Lock()
 
 CONFIG = load_config()
@@ -314,6 +318,46 @@ def stdp_run(index, resample):
             "top": top}
 
 
+# ---------- Phase 6: the Phase 2 LIF layer on secret shares ----------
+SLIF_JOB = {"running": False, "phase": "", "progress": 0.0, "error": None}
+SLIF_RESULT = None
+if (SLIF_DIR / "secure_lif.json").exists():
+    SLIF_RESULT = json.loads((SLIF_DIR / "secure_lif.json").read_text())
+
+
+def _slif_run(index, resample):
+    global SLIF_RESULT
+    try:
+        index, spikes = _encode(index, resample)
+        res = mpc_lif.run_secure_lif(LIF, spikes, lambda phase, frac: SLIF_JOB.update(phase=phase, progress=frac))
+        res.update(image_index=index, resample=int(resample), label=int(LABELS[index]))
+        SLIF_DIR.mkdir(parents=True, exist_ok=True)
+        (SLIF_DIR / "secure_lif.json").write_text(json.dumps(res))
+        SLIF_RESULT = res
+        SLIF_JOB["progress"] = 1.0
+    except Exception as e:
+        SLIF_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        SLIF_JOB["running"] = False
+        mpc_real.RUN_LOCK.release()
+
+
+def slif_start(index, resample):
+    """Start the secure run in the background. False if another MP-SPDZ job is running."""
+    global SLIF_RESULT
+    if not mpc_real.RUN_LOCK.acquire(blocking=False):
+        return False
+    SLIF_RESULT = None
+    SLIF_JOB.update(running=True, phase="starting", progress=0.0, error=None)
+    threading.Thread(target=_slif_run, args=(index, resample), daemon=True).start()
+    return True
+
+
+def slif_status():
+    ok, why = mpc_real.available()
+    return {"available": ok, "reason": why, "job": dict(SLIF_JOB), "result": SLIF_RESULT}
+
+
 def info():
     return {
         "config": CONFIG,
@@ -410,6 +454,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(stdp_status())
         if path == "/api/stdp/weights":
             return self._json(stdp_weights())
+        if path == "/api/slif/status":
+            return self._json(slif_status())
+        if path == "/api/mpc/real/status":
+            return self._json(mpc_real.status())
         name = "index.html" if path == "/" else path.lstrip("/")
         f = (WEB_DIR / name).resolve()
         if WEB_DIR.resolve() not in f.parents or not f.is_file():
@@ -437,6 +485,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if self.path == "/api/stdp/run":
                 return self._json(stdp_run(body.get("index", 0), body.get("resample", 0)))
+            if self.path == "/api/mpc/run":
+                return self._json(mpc_sim.run(body.get("op", "add"), body.get("a", 0), body.get("b", 0),
+                                              body.get("bits", 8), body.get("seed", 0)))
+            if self.path == "/api/mpc/secrecy":
+                return self._json(mpc_sim.secrecy_demo(int(body.get("bits", 8)), int(body.get("a", 0)),
+                                                       int(body.get("b", 1)), seed=int(body.get("seed", 0))))
+            if self.path == "/api/mpc/snn":
+                return self._json(mpc_sim.snn_preview(CONFIG["simulation"]["num_steps"], CONFIG["architecture"]["num_hidden"],
+                                                      CONFIG["architecture"]["num_inputs"], int(body.get("bits", 64))))
+            if self.path == "/api/slif/start":
+                return self._json({"started": slif_start(body.get("index", 0), body.get("resample", 0))})
+            if self.path == "/api/mpc/real/start":
+                return self._json({"started": mpc_real.start(int(body.get("a", 0)), int(body.get("b", 0)))})
             if self.path == "/api/ann/train":
                 return self._json({"started": ann_start()})
             if self.path == "/api/ann/stop":

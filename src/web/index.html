@@ -70,6 +70,60 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px;margin:0}
 .kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono)}
 .kvhead{grid-column:1/-1;color:var(--accent);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px}
+/* ---- Phase 5: secret sharing lab ---- */
+.c3{grid-column:span 3}.c5{grid-column:span 5}.c9{grid-column:span 9}.c12{grid-column:span 12}
+#view-5{grid-template-rows:500px 360px 330px;overflow:auto;align-content:start}
+@media (max-width:1000px){#view-5{grid-template-rows:none;grid-auto-rows:auto}.c3,.c5,.c9{grid-column:span 12}}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.fld{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;margin:4px 0;font-size:12px}
+.fld small{display:block;color:var(--muted);font-size:10.5px}
+select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font:inherit}
+.panel .scroll{flex:1;min-height:0;overflow:auto}
+.idea{margin:6px 0 0;padding-left:16px;font-size:12px;line-height:1.5}
+.idea li{margin-bottom:4px}
+.stepbar{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:none;margin-bottom:6px}
+.sp{min-width:26px;height:22px;border-radius:5px;border:1px solid var(--line);background:var(--bg);color:var(--muted);font:11px var(--mono);padding:0 4px;cursor:pointer}
+.sp.seen{border-color:var(--c);color:var(--ink)}
+.sp.on{background:var(--c);border-color:var(--c);color:#000;font-weight:700}
+.stage{flex:1;min-height:0;overflow:auto}
+.stitle{font-size:15px;font-weight:600;margin:2px 0}
+.badge{display:inline-block;border-radius:999px;padding:0 8px;font-size:10.5px;margin-left:8px;border:1px solid;vertical-align:middle;font-weight:500}
+.badge.loc{color:var(--hidden);border-color:var(--hidden)}
+.badge.rnd{color:var(--spike);border-color:var(--spike)}
+.why{font-size:12.5px;line-height:1.5;margin:4px 0 8px}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pc{border:1px solid var(--pc);border-radius:8px;padding:6px 8px;background:var(--bg);min-width:0}
+.pch{font-weight:700;color:var(--pc)}
+.pch small{color:var(--muted);font-weight:400;margin-left:6px}
+.pcs{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:6px 0 2px}
+.pct{width:100%;border-collapse:collapse;font:11.5px var(--mono)}
+.pct td{padding:1px 4px;border-bottom:1px solid var(--line)}
+.pct td:last-child{text-align:right;word-break:break-all}
+.pct tr.hot td{color:var(--spike)}
+.pcd{margin:0;font:11px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word}
+.msgs{display:flex;flex-direction:column;gap:3px;margin-top:8px}
+.msg{font:11.5px var(--mono);border:1px dashed var(--line);border-radius:6px;padding:2px 8px;word-break:break-word}
+.god{margin-top:8px;border:1px dashed var(--muted);border-radius:6px;padding:4px 8px;font-size:11.5px;color:var(--muted)}
+.god b{color:var(--ink)}
+.tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+.tbl th{color:var(--muted);font-weight:500;text-align:left;padding:2px 6px;border-bottom:1px solid var(--line)}
+.tbl td{padding:3px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl td.n,.tbl th.n{text-align:right;font-family:var(--mono)}
+.tbl tr.sum td{font-weight:700;color:var(--ink)}
+.how{margin:0;padding-left:16px}
+.how li{margin-bottom:5px;font:11.5px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word}
+.tag{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:0 6px;color:var(--muted)}
+.tag.tr{border-color:var(--output);color:var(--output)}
+/* ---- Phase 6: secure LIF ---- */
+.c6{grid-column:span 6}.c7{grid-column:span 7}
+#view-6{grid-template-rows:440px 410px 340px;overflow:auto;align-content:start}
+@media (max-width:1000px){#view-6{grid-template-rows:none;grid-auto-rows:auto}.c6,.c7{grid-column:span 12}}
+.bar{height:7px;border-radius:4px;background:var(--accent);min-width:1px}
+.tbl td.m{font-family:var(--mono);font-size:11px;white-space:nowrap}
+.good{color:var(--hidden)}.bad{color:var(--output)}
+.sl-lines{margin:6px 0 0;padding-left:16px;font-size:12px;line-height:1.5}
+.sl-lines li{margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -282,6 +336,106 @@ input[type=range]{accent-color:var(--accent);width:170px;vertical-align:middle}
       <div class="cfgbox"><dl class="kv" id="rd-ops"></dl></div>
     </section>
   </div>
+
+  <div class="grid" id="view-5" hidden>
+    <section class="panel c3">
+      <h2>Secret sharing lab <small>real numbers, one step at a time</small></h2>
+      <div class="scroll">
+        <div class="seg" id="mp-ops">
+          <button type="button" data-op="add" class="on">Add</button>
+          <button type="button" data-op="mul">Multiply</button>
+          <button type="button" data-op="cmp">Compare</button>
+        </div>
+        <div class="fld"><span>a <small>P&#8320;'s private number</small></span><input type="number" id="mp-a" value="7"></div>
+        <div class="fld"><span>b <small>P&#8321;'s private number</small></span><input type="number" id="mp-b" value="12"></div>
+        <div class="fld"><span>Ring size <small id="mp-range"></small></span>
+          <select id="mp-bits"><option value="8">8 bits</option><option value="16">16 bits</option><option value="32">32 bits</option><option value="64">64 bits</option></select></div>
+        <div class="fld"><span>Random seed <small>changes the random shares only</small></span><input type="number" id="mp-seed" value="0"></div>
+        <div class="trainbar"><button id="mp-run" class="primary" type="button">Run</button><span id="mp-err" class="err"></span></div>
+        <ul class="idea">
+          <li>A secret is split into <b>3 random pieces</b> that add up to it.</li>
+          <li>Each party keeps <b>2 of the 3</b> pieces. One party alone sees only noise.</li>
+          <li><b>Add</b> is free. <b>Multiply</b> costs one message per party. <b>Compare</b> costs many rounds.</li>
+          <li>Press Run, then step through with the numbered buttons.</li>
+          <li>Try a = 37, b = 12 with Multiply: 444 does not fit in 8 bits, so the result wraps around.</li>
+        </ul>
+      </div>
+    </section>
+    <section class="panel c9">
+      <h2 id="mp-head">Parties <small>what each computer holds, computes and sends</small></h2>
+      <div class="stepbar" id="mp-bar"></div>
+      <div class="stage" id="mp-stage"></div>
+    </section>
+    <section class="panel c5">
+      <h2>The formulas in this step <small>with your numbers</small></h2>
+      <div class="scroll"><ul class="how" id="mp-how"></ul></div>
+    </section>
+    <section class="panel c4">
+      <h2>Cost <small>counted by the simulation, then measured in real MP-SPDZ</small></h2>
+      <div class="scroll">
+        <table class="tbl" id="mp-cost"></table>
+        <div class="trainbar" style="margin-top:8px"><button id="mp-real" type="button" class="primary">Run in real MP-SPDZ</button><span id="mp-real-state" class="mono"></span></div>
+        <div class="progress"><div id="mp-real-prog"></div></div>
+        <table class="tbl" id="mp-real-tbl"></table>
+        <div class="note" id="mp-real-note">Starts 3 MP-SPDZ parties on this computer (no training). It compiles and runs 4 tiny programs, so it takes a few seconds.</div>
+      </div>
+    </section>
+    <section class="panel c3">
+      <h2>What can ONE party see? <small id="mp-sec-sub"></small></h2>
+      <div class="cv"><canvas id="mp-sec"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>secret a</span><span><i style="background:var(--hidden)"></i>secret b</span></div>
+      <div class="note">P&#8320; adds up the two pieces it holds, over 2,000 fresh sharings. The histogram is flat for both secrets, so its view says nothing about which secret was shared.</div>
+    </section>
+    <section class="panel c12">
+      <h2>What this means for the SNN <small>our plaintext operations written as add / multiply / compare, estimated from the textbook formulas at 64 bits (Stage 3 replaces this with measurements)</small></h2>
+      <div class="scroll"><table class="tbl" id="mp-snn"></table><div class="note" id="mp-snn-note"></div></div>
+    </section>
+  </div>
+
+  <div class="grid" id="view-6" hidden>
+    <section class="panel c3">
+      <h2>Secure LIF layer <small>the Phase 2 layer on secret shares</small></h2>
+      <div class="scroll">
+        <div class="trainbar"><button id="sl-run" class="primary" type="button">Run secure LIF on this image</button></div>
+        <div class="progress"><div id="sl-prog"></div></div>
+        <div id="sl-state" class="mono sub2"></div>
+        <div id="sl-stale" class="note"></div>
+        <dl class="kv" id="sl-facts" style="margin-top:6px"></dl>
+        <ul class="sl-lines">
+          <li>Same weights, same threshold, same input spikes as Phase 2. Only the arithmetic changes: it runs on shares.</li>
+          <li>Party 0 holds the image spikes. Party 1 holds the weights. Party 2 only computes.</li>
+          <li>To CHECK the answer we open every spike and membrane value once. A real deployment would never open them.</li>
+          <li>Use the image index and the timestep slider at the top. Click a neuron row in the raster.</li>
+        </ul>
+      </div>
+    </section>
+    <section class="panel c5">
+      <h2>Hidden spikes <small id="sl-ras-sub">plaintext (left) vs secure (right), rows = neurons, columns = timesteps</small></h2>
+      <div class="cv"><canvas id="sl-ras"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>plaintext spike</span><span><i style="background:var(--hidden)"></i>secure spike</span><span><i style="background:var(--output)"></i>they disagree</span></div>
+    </section>
+    <section class="panel c4">
+      <h2>Membrane of one neuron <small id="sl-mem-sub"></small></h2>
+      <div class="cv"><canvas id="sl-mem"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>plaintext</span><span><i style="background:var(--hidden)"></i>secure</span><span><i style="background:var(--spike)"></i>threshold</span></div>
+    </section>
+    <section class="panel c8">
+      <h2>One timestep, one neuron, step by step <small id="sl-steps-sub"></small></h2>
+      <div class="scroll"><table class="tbl" id="sl-steps"></table></div>
+    </section>
+    <section class="panel c4">
+      <h2>What one timestep costs <small>measured in MP-SPDZ, all neurons</small></h2>
+      <div class="scroll"><table class="tbl" id="sl-cost"></table><div class="note" id="sl-cost-note"></div></div>
+    </section>
+    <section class="panel c6">
+      <h2>Is the secure answer right? <small>fixed-point precision</small></h2>
+      <div class="scroll" id="sl-prec"></div>
+    </section>
+    <section class="panel c6">
+      <h2>Measured vs the Phase 5 estimate <small>per image, data sent by all 3 parties</small></h2>
+      <div class="scroll"><table class="tbl" id="sl-est"></table><div class="note" id="sl-est-note"></div></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -293,7 +447,9 @@ const PHASES = [
   ["2", "LIF neurons", true],
   ["3", "STDP", true],
   ["4", "Readout", true],
-  ["5+", "Secure MPC", false],
+  ["5", "Secret sharing", true],
+  ["6", "Secure LIF", true],
+  ["7+", "Secure learning", false],
 ];
 let view = 0;
 let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, result: null}, annTimer = null;
@@ -301,7 +457,7 @@ let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, 
 function renderChips() {
   $('phases').innerHTML = PHASES.map(([n, name, built]) => {
     if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
-    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result) || (n === '4' && RD.result);
+    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result) || (n === '4' && RD.result) || (n === '5' && MP.ran) || (n === '6' && SL.result);
     return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
   }).join('');
 }
@@ -310,13 +466,15 @@ $('phases').addEventListener('click', e => {
 });
 function setView(v) {
   view = v;
-  [0, 1, 2, 3, 4].forEach(i => $('view-' + i).hidden = i !== v);
-  $('controls-0').hidden = v === 1;
+  [0, 1, 2, 3, 4, 5, 6].forEach(i => $('view-' + i).hidden = i !== v);
+  $('controls-0').hidden = v === 1 || v === 5;
   renderChips();
   if (v === 1) pollAnn();
   if (v === 2) loadLif();
   if (v === 3) { pollStdp(); loadStdpRun(); }
   if (v === 4) { pollAnn(); pollReadout(); loadRdPredict(); }
+  if (v === 5) mpEnter();
+  if (v === 6) slEnter();
   requestAnimationFrame(draw);
 }
 
@@ -1003,11 +1161,334 @@ function drawAnn() {
 $('ann-train').onclick = async () => { try { await api('/api/ann/train', {}); hideErr(); } catch (e) { showErr(e); return; } pollAnn(); };
 $('ann-stop').onclick = async () => { await api('/api/ann/stop', {}); };
 
+// ---------------- Phase 5: secret sharing lab ----------------
+const MP = {op: 'add', data: null, step: 0, timer: 0, ran: false, snn: null, sec: null, real: null, realTimer: 0, entered: false};
+const SECTION_COLOR = {setup: '--muted', input: '--input', add: '--hidden', mul: '--accent', cmp: '--output', reveal: '--spike'};
+const PARTY_COLOR = ['--input', '--hidden', '--output'];
+const PARTY_ROLE = ['owns a', 'owns b', 'no input'];
+const SUB3 = '₀₁₂';
+const PHASE_OF = {input: 'input', add: 'op', mul: 'op', cmp: 'op', reveal: 'reveal'};
+const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function mpRangeText() {
+  const k = +$('mp-bits').value, hi = (1n << BigInt(k - 1)) - 1n;
+  $('mp-range').textContent = `allowed -${hi + 1n} .. ${hi}` + (k === 64 ? ' (keep below 2^53 here)' : '');
+}
+
+function mpEnter() {
+  mpRangeText();
+  if (!MP.entered) { MP.entered = true; mpRun(); mpSnn(); }
+  mpPollReal();
+}
+
+async function mpRun() {
+  $('mp-err').textContent = '';
+  const body = {op: MP.op, a: +$('mp-a').value, b: +$('mp-b').value, bits: +$('mp-bits').value, seed: +$('mp-seed').value};
+  try { MP.data = await api('/api/mpc/run', body); } catch (e) { $('mp-err').textContent = e.message; return; }
+  MP.step = 0; MP.ran = true; mpStopPlay(); renderChips(); mpRender();
+  try { MP.sec = await api('/api/mpc/secrecy', body); } catch (e) { MP.sec = null; }
+  drawSecrecy();
+}
+
+function mpStopPlay() { if (MP.timer) { clearInterval(MP.timer); MP.timer = 0; } }
+function mpGo(n) {
+  if (!MP.data) return;
+  MP.step = Math.max(0, Math.min(MP.data.steps.length - 1, n));
+  mpRender();
+}
+
+function mpRender() {
+  const d = MP.data;
+  if (!d) return;
+  const n = d.steps.length, s = d.steps[MP.step];
+  const col = sec => `var(${SECTION_COLOR[sec]})`;
+  $('mp-bar').innerHTML =
+    `<button type="button" data-act="prev">&larr;</button>` +
+    d.steps.map(x => `<button type="button" class="sp ${x.n === MP.step ? 'on' : x.n < MP.step ? 'seen' : ''}" style="--c:${col(x.section)}" data-step="${x.n}" title="${escHtml(x.title)}">${x.n + 1}</button>`).join('') +
+    `<button type="button" data-act="next">&rarr;</button>` +
+    `<button type="button" data-act="play" class="primary">${MP.timer ? 'Pause' : 'Auto-play'}</button>` +
+    `<span class="sub2">step ${MP.step + 1} of ${n}</span>`;
+  const bits = s.msgs.reduce((t, m) => t + m.bits, 0);
+  const badge = s.local
+    ? '<span class="badge loc">LOCAL: no communication</span>'
+    : `<span class="badge rnd">ROUND ${s.round}: ${s.msgs.length} message${s.msgs.length === 1 ? '' : 's'}, ${bits} bits</span>`;
+  const cards = s.parties.map((p, i) => {
+    const rows = p.holds.map(r => `<tr class="${r.hot ? 'hot' : ''}"><td>${escHtml(r.k)}</td><td>${escHtml(r.v)}</td></tr>`).join('');
+    return `<div class="pc" style="--pc:var(${PARTY_COLOR[i]})"><div class="pch">P${SUB3[i]}<small>${PARTY_ROLE[i]}</small></div>` +
+      (rows ? `<div class="pcs">holds</div><table class="pct">${rows}</table>` : '') +
+      (p.does.length ? `<div class="pcs">does</div><pre class="pcd">${escHtml(p.does.join('\n'))}</pre>` : '') + '</div>';
+  }).join('');
+  const msgs = s.msgs.length
+    ? '<div class="msgs">' + s.msgs.map(m =>
+        `<div class="msg"><b style="color:var(${PARTY_COLOR[m.src]})">P${SUB3[m.src]}</b> &rarr; <b style="color:var(${PARTY_COLOR[m.dst]})">P${SUB3[m.dst]}</b>&nbsp; ${escHtml(m.label)} = ${escHtml(m.value)} <small>(${m.bits} bits)</small></div>`).join('') + '</div>'
+    : '';
+  const god = s.god.length ? `<div class="god"><b>God's-eye view</b>, only this simulation can see it, no party can:<br>${s.god.map(escHtml).join('<br>')}</div>` : '';
+  $('mp-stage').innerHTML = `<div class="stitle">${escHtml(s.title)}${badge}</div><div class="why">${escHtml(s.why)}</div><div class="cards">${cards}</div>${msgs}${god}`;
+  $('mp-how').innerHTML = s.how.map(h => `<li>${escHtml(h)}</li>`).join('');
+  mpRenderCost();
+}
+
+function mpRenderCost() {
+  const d = MP.data, s = d.steps[MP.step], cur = PHASE_OF[s.section];
+  const opName = {add: 'Add', mul: 'Multiply', cmp: 'Compare'}[d.op];
+  const row = (label, key, c) => `<tr class="${key === cur ? 'sum' : ''}"><td>${label}</td><td class="n">${c.rounds}</td><td class="n">${c.messages}</td><td class="n">${c.bits}</td></tr>`;
+  $('mp-cost').innerHTML =
+    '<tr><th></th><th class="n">rounds</th><th class="n">messages</th><th class="n">bits sent</th></tr>' +
+    row('Share the 2 inputs', 'input', d.cost.input) + row(opName + ' itself', 'op', d.cost.op) + row('Open the result', 'reveal', d.cost.reveal) +
+    `<tr class="sum"><td>Total (ring of ${d.bits} bits)</td><td class="n">${d.total.rounds}</td><td class="n">${d.total.messages}</td><td class="n">${d.total.bits}</td></tr>` +
+    `<tr><td colspan="4" class="sub2">Result ${escHtml(d.result)}${d.wrapped ? ` (the exact answer ${d.exact} does not fit in ${d.bits} bits, so it wrapped around)` : ''}. ` +
+    `${d.ok ? 'Correct.' : 'WRONG'} The bold row is the step you are looking at. Messages = one per party per round.</td></tr>`;
+  mpRenderReal();
+}
+
+function mpRenderReal() {
+  const st = MP.real, tbl = $('mp-real-tbl');
+  if (!st) { tbl.innerHTML = ''; return; }
+  const job = st.job;
+  $('mp-real').disabled = job.running || !st.available;
+  $('mp-real-prog').style.width = (job.progress * 100) + '%';
+  $('mp-real-state').innerHTML = job.error ? `<span class="err">${escHtml(job.error)}</span>` : !st.available ? `<span class="err">${escHtml(st.reason)}</span>` : job.running ? escHtml(job.phase) : st.result ? 'done' : '';
+  const r = st.result;
+  if (!r) { tbl.innerHTML = ''; return; }
+  const sn = MP.snn;
+  const text = {add: [0, 0], mul: sn ? [sn.cost_mul.rounds, Math.round(sn.cost_mul.bits / 8)] : null, cmp: sn ? [sn.cost_compare.rounds, Math.round(sn.cost_compare.bits / 8)] : null};
+  const fmtT = m => text[m] ? `${text[m][0]} round${text[m][0] === 1 ? '' : 's'}, ${text[m][1]} B` : 'n/a';
+  const names = {add: 'Add', mul: 'Multiply', cmp: 'Compare'};
+  tbl.innerHTML = '<tr><th>operation (cost above the inputs)</th><th class="n">our textbook sim, 64 bits</th><th class="n">real MP-SPDZ</th></tr>' +
+    ['add', 'mul', 'cmp'].map(m => `<tr><td>${names[m]}</td><td class="n">${fmtT(m)}</td><td class="n">${r.ops[m].rounds} round${r.ops[m].rounds === 1 ? '' : 's'}, ${r.ops[m].global_bytes} B</td></tr>`).join('') +
+    `<tr><td colspan="3" class="sub2">MP-SPDZ printed: a+b = ${r.runs.add.result}, a&middot;b = ${r.runs.mul.result}, a&lt;b = ${r.runs.cmp.result} (for a = ${r.a}, b = ${r.b}). ${escHtml(r.protocol)}. Bytes are summed over all 3 parties.</td></tr>`;
+  const mulOk = r.ops.mul.rounds === 1 && r.ops.mul.global_bytes === 24;
+  const ratio = sn ? (r.ops.cmp.global_bytes / (sn.cost_compare.bits / 8)).toFixed(0) : null;
+  $('mp-real-note').textContent = `Add is free in both. Multiply ${mulOk ? 'matches the simulation exactly (1 round, 3 × 8 bytes)' : 'differs from the simulation'}. ` +
+    `Compare costs ${r.ops.cmp.rounds} rounds and ${r.ops.cmp.global_bytes} bytes in MP-SPDZ` + (ratio ? `, about ${ratio}× more data than our textbook version. The gap is measured; why MP-SPDZ's default comparison costs more is something to profile in Stage 5. ` : '. ') +
+    `Either way, a comparison is far more expensive than a multiplication.`;
+}
+
+async function mpPollReal() {
+  clearTimeout(MP.realTimer);
+  try { MP.real = await api('/api/mpc/real/status'); } catch (e) { return; }
+  mpRenderReal();
+  if (MP.real.job.running) MP.realTimer = setTimeout(mpPollReal, 700);
+}
+
+async function mpRealStart() {
+  try { await api('/api/mpc/real/start', {a: +$('mp-a').value, b: +$('mp-b').value}); hideErr(); } catch (e) { showErr(e); return; }
+  mpPollReal();
+}
+
+async function mpSnn() {
+  try { MP.snn = await api('/api/mpc/snn', {bits: 64}); } catch (e) { return; }
+  const f = x => x.toLocaleString('en-US');
+  const mb = x => x === 0 ? '0' : x < 0.001 ? '< 1 KB' : x < 1 ? (x * 1000).toFixed(0) + ' KB' : x < 1000 ? x.toFixed(1) + ' MB' : (x / 1000).toFixed(1) + ' GB';
+  const rows = MP.snn.rows;
+  $('mp-snn').innerHTML = '<tr><th>SNN operation</th><th>becomes</th><th class="n">how many per image</th><th class="n">data sent</th><th class="n">rounds</th></tr>' +
+    rows.map(r => `<tr><td>${escHtml(r.name)} ${r.training ? '<span class="tag tr">training only</span>' : ''}<div class="sub2">${escHtml(r.note)}</div></td>` +
+      `<td>${escHtml(r.primitive)}</td><td class="n">${f(r.count)}</td><td class="n">${mb(r.megabytes)}</td><td class="n">${f(r.rounds)}</td></tr>`).join('');
+  const thr = rows.find(r => r.name.startsWith('Threshold')), cur = rows.find(r => r.name.startsWith('Synaptic')), st = rows.find(r => r.name.startsWith('STDP'));
+  $('mp-snn-note').textContent = `Reading this: the threshold tests send about ${(thr.bits / cur.bits).toFixed(0)}× more data than the whole synaptic sum, and the STDP update with a secret winner touches all ${f(MP.snn.n_in * MP.snn.H)} weights ` +
+    `per timestep instead of the ~4 neurons that update in plaintext. These are estimates from the textbook formulas (rounds assume all neurons run in parallel within a timestep); the sparsity advantage disappears when spikes and the winner must stay secret. Stage 3 measures the real numbers.`;
+  mpRenderReal();
+}
+
+function drawSecrecy() {
+  const {c, w, h} = fit($('mp-sec')), s = MP.sec;
+  if (!s) { emptyMsg(c, w, h, 'Press Run'); return; }
+  $('mp-sec-sub').textContent = `bins of (x₀+x₁) mod ${2 ** s.bits}`;
+  const L = 30, B = 16, Tp = 8, pw = w - L - 4, ph = h - B - Tp, bw = pw / s.bins;
+  const mx = Math.max(s.expected_per_bin * 1.7, ...s.hist_a, ...s.hist_b);
+  const Y = v => Tp + ph - v / mx * ph;
+  c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted'); c.textAlign = 'right'; c.textBaseline = 'middle';
+  c.fillText(Math.round(mx), L - 4, Tp); c.fillText(0, L - 4, Tp + ph);
+  s.hist_a.forEach((v, i) => {
+    c.fillStyle = css('--input'); c.fillRect(L + i * bw + 1, Y(v), bw / 2 - 1, Tp + ph - Y(v));
+    c.fillStyle = css('--hidden'); c.fillRect(L + i * bw + bw / 2, Y(s.hist_b[i]), bw / 2 - 1, Tp + ph - Y(s.hist_b[i]));
+  });
+  c.strokeStyle = css('--spike'); c.setLineDash([4, 3]); c.beginPath(); c.moveTo(L, Y(s.expected_per_bin)); c.lineTo(L + pw, Y(s.expected_per_bin)); c.stroke(); c.setLineDash([]);
+  c.fillStyle = css('--muted'); c.textAlign = 'center'; c.textBaseline = 'top';
+  [0, s.bins / 2, s.bins - 1].forEach(i => c.fillText(i * s.bin_width, L + (i + .5) * bw, h - B + 3));
+}
+
+$('mp-ops').addEventListener('click', e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return;
+  MP.op = b.dataset.op;
+  [...$('mp-ops').children].forEach(x => x.classList.toggle('on', x === b));
+  mpRun();
+});
+$('mp-bar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.step !== undefined) { mpStopPlay(); mpGo(+b.dataset.step); return; }
+  if (b.dataset.act === 'prev') { mpStopPlay(); mpGo(MP.step - 1); }
+  if (b.dataset.act === 'next') { mpStopPlay(); mpGo(MP.step + 1); }
+  if (b.dataset.act === 'play') {
+    if (MP.timer) { mpStopPlay(); mpRender(); return; }
+    if (MP.step >= MP.data.steps.length - 1) MP.step = 0;
+    MP.timer = setInterval(() => { if (MP.step >= MP.data.steps.length - 1) { mpStopPlay(); mpRender(); } else mpGo(MP.step + 1); }, 2200);
+    mpRender();
+  }
+});
+$('mp-run').onclick = mpRun;
+$('mp-real').onclick = mpRealStart;
+$('mp-bits').onchange = () => { mpRangeText(); mpRun(); };
+['mp-a', 'mp-b', 'mp-seed'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') mpRun(); }));
+
+function drawMpc() { mpRender(); drawSecrecy(); }
+
+// ---------------- Phase 6: the Phase 2 LIF layer on secret shares ----------------
+const SL = {result: null, job: null, avail: true, reason: '', sel: 0, selFor: '', timer: 0, geo: null};
+const fmtB = n => n < 1000 ? n + ' B' : n < 1e6 ? (n / 1e3).toFixed(1) + ' KB' : (n / 1e6).toFixed(2) + ' MB';
+const n4 = v => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(4);
+
+function slEnter() { if (!MP.snn) mpSnn(); slPoll(); }
+
+async function slPoll() {
+  clearTimeout(SL.timer);
+  let st;
+  try { st = await api('/api/slif/status'); } catch (e) { return; }
+  SL.result = st.result; SL.job = st.job; SL.avail = st.available; SL.reason = st.reason;
+  renderChips(); if (view === 6) drawSl();
+  if (st.job.running) SL.timer = setTimeout(slPoll, 600);
+}
+
+async function slStart() {
+  try { await api('/api/slif/start', {index: +$('index').value, resample}); hideErr(); } catch (e) { showErr(e); return; }
+  slPoll();
+}
+
+function slVals(src, t, j, beta, thr) {
+  const uPrev = t === 0 ? 0 : src.membrane[t - 1][j] - src.spikes[t - 1][j] * thr;       // membrane after last reset
+  const I = src.current[t][j], u = src.membrane[t][j], fired = src.spikes[t][j];
+  return {uPrev, I, leak: beta * uPrev, u, fired, after: u - fired * thr};
+}
+
+function slRender() {
+  const R = SL.result, job = SL.job || {running: false, progress: 0, phase: '', error: null};
+  $('sl-run').disabled = job.running || !SL.avail;
+  $('sl-prog').style.width = (job.progress * 100) + '%';
+  $('sl-state').innerHTML = job.error ? `<span class="err">${escHtml(job.error)}</span>` : !SL.avail ? `<span class="err">${escHtml(SL.reason)}</span>`
+    : job.running ? escHtml(job.phase) : R ? 'done' : 'not run yet';
+  const N = CFG.neuron, A = CFG.architecture;
+  const facts = R ? [['image', `#${R.image_index} (digit ${R.label})`], ['timesteps T', R.T], ['inputs / hidden', `${R.n_in} / ${R.H}`], ['β (leak)', R.beta], ['threshold θ', R.threshold],
+      ['reset', 'subtract'], ['ring', `${R.fixed_point.ring_bits} bits`], ['fixed point', `${R.fixed_point.fractional_bits} fractional bits`]]
+    : [['timesteps T', CFG.simulation.num_steps], ['inputs / hidden', `${A.num_inputs} / ${A.num_hidden}`], ['β (leak)', N.beta], ['threshold θ', N.threshold], ['reset', N.reset]];
+  $('sl-facts').innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('sl-stale').textContent = R && (R.image_index !== +$('index').value || R.resample !== resample)
+    ? `Showing image #${R.image_index}. Press Run to compute image #${$('index').value}.` : '';
+  if (!R) {
+    $('sl-steps').innerHTML = '<tr><td class="sub2">Press "Run secure LIF on this image". It takes a few seconds: it compiles 7 small MP-SPDZ programs and runs them with 3 local parties. No training happens.</td></tr>';
+    $('sl-cost').innerHTML = ''; $('sl-cost-note').textContent = ''; $('sl-prec').innerHTML = ''; $('sl-est').innerHTML = ''; $('sl-est-note').textContent = '';
+    $('sl-steps-sub').textContent = ''; return;
+  }
+  const stamp = `${R.image_index}/${R.resample}`;
+  if (SL.selFor !== stamp) {                                   // first look at a new result: pick the busiest neuron
+    SL.selFor = stamp;
+    const tot = Array.from({length: R.H}, (_, j) => R.plain.spikes.reduce((a, row) => a + row[j], 0));
+    SL.sel = tot.indexOf(Math.max(...tot));
+  }
+  const t = Math.min(step, R.T - 1), j = SL.sel, P = slVals(R.plain, t, j, R.beta, R.threshold), S = slVals(R.secure, t, j, R.beta, R.threshold);
+  const part = Object.fromEntries(R.parts.map(p => [p.mode, p]));
+  const cost = m => `${part[m].per_step.rounds} round${part[m].per_step.rounds === 1 ? '' : 's'}, ${fmtB(part[m].per_step.global_bytes)}`;
+  const free = '0 rounds, 0 B';
+  const row = (n, what, pv, sv, how, c) => `<tr><td>${n}</td><td>${what}</td><td class="m">${pv}</td><td class="m">${sv}</td><td>${how}</td><td class="m">${c}</td></tr>`;
+  $('sl-steps-sub').textContent = `timestep t = ${t}, neuron ${j} (cost column = all ${R.H} neurons together)`;
+  $('sl-steps').innerHTML = '<tr><th>#</th><th>step</th><th>plaintext</th><th>secure (opened to check)</th><th>how it is done on shares</th><th>measured cost</th></tr>' +
+    row(1, `membrane after the last reset<div class="sub2">u<sub>t-1</sub> - θ·spike<sub>t-1</sub></div>`, n4(P.uPrev), n4(S.uPrev), 'already secret-shared, nothing to do', '-') +
+    row(2, `synaptic current<div class="sub2">I = sum of W·s over ${R.n_in} inputs</div>`, n4(P.I), n4(S.I), escHtml(part.current.how), cost('current')) +
+    row(3, `leak<div class="sub2">β·u = ${R.beta} × ${n4(S.uPrev)}</div>`, n4(P.leak), n4(S.leak), escHtml(part.leak.how), cost('leak')) +
+    row(4, `integrate<div class="sub2">u = β·u + I</div>`, n4(P.u), n4(S.u), 'addition of two shared values: local, free', free) +
+    row(5, `threshold<div class="sub2">spike = (u ≥ ${R.threshold})</div>`, `${n4(P.u)} ≥ ${R.threshold}? ${P.fired}`, `${n4(S.u)} ≥ ${R.threshold}? ${S.fired}`, escHtml(part.thresh.how), cost('thresh')) +
+    row(6, `reset<div class="sub2">u ← u - θ·spike</div>`, n4(P.after), n4(S.after), escHtml(part.reset.how) + `<div class="sub2">free here because θ = ${R.threshold} is a whole number. A fractional public θ cost 3 rounds and about 82 KB per timestep in a quick check (θ = 1.5, 100 neurons). A secret adaptive θ (STDP) would need a full secret multiplication.</div>`, cost('reset'));
+
+  const maxB = Math.max(...R.parts.map(p => p.per_step.global_bytes), 1);
+  const T = R.T;
+  $('sl-cost').innerHTML = '<tr><th>one timestep</th><th class="n">rounds</th><th class="n">data</th><th></th></tr>' +
+    R.parts.map(p => `<tr><td>${escHtml(p.name)}</td><td class="n">${p.per_step.rounds}</td><td class="n">${fmtB(p.per_step.global_bytes)}</td><td style="width:70px"><div class="bar" style="width:${p.per_step.global_bytes / maxB * 100}%"></div></td></tr>`).join('') +
+    `<tr class="sum"><td>whole forward pass (${T} timesteps, measured)</td><td class="n">${R.total.rounds}</td><td class="n">${fmtB(R.total.global_bytes)}</td><td></td></tr>` +
+    `<tr><td colspan="4" class="sub2">The 4 parts × ${T} timesteps add up to ${fmtB(R.sum_of_parts_bytes)}. Sharing the inputs (once, before this): ${fmtB(R.inputs_bytes)}.</td></tr>`;
+  const big = R.parts.slice().sort((a, b) => b.per_step.global_bytes - a.per_step.global_bytes)[0];
+  $('sl-cost-note').textContent = `The most expensive part is "${big.name}". The ${T} timesteps cannot run in parallel: each one needs the membrane of the previous one, so rounds add up (${R.total.rounds} in total). The cost does not depend on how many spikes there are: the secure program does the same work whatever the input, so the sparsity that makes the plaintext layer cheap gives no saving here. Try another image and compare the byte counts.`;
+
+  const c = R.check, ok = c.spike_mismatches === 0;
+  $('sl-prec').innerHTML =
+    `<div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">` +
+    [[`<span class="${ok ? 'good' : 'bad'}">${c.spike_mismatches} / ${c.cells}</span>`, 'spikes that differ from plaintext'],
+     [`${c.spikes_secure} vs ${c.spikes_plain}`, 'secure vs plaintext spike count'],
+     [c.max_membrane_error.toFixed(4), 'largest membrane error'],
+     [c.mean_membrane_error.toFixed(4), 'average membrane error']].map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('') + '</div>' +
+    `<ul class="sl-lines"><li>Numbers are fixed point: the value x is stored as the integer x × 2<sup>${R.fixed_point.fractional_bits}</sup>, so the smallest step is ${c.lsb.toExponential(2)} and values must stay below ${R.fixed_point.max_abs}. Plaintext uses 32-bit floats.</li>` +
+    `<li>Why the membrane error (${c.max_membrane_error.toFixed(4)}) is larger than one step: every multiplication by β or by a weight is cut back to ${R.fixed_point.fractional_bits} fractional bits, and the small rounding of each of the ${R.T} timesteps accumulates through the leak.</li>` +
+    `<li>A spike can only differ when a membrane value lands within that error of the threshold. ${ok ? 'Here none did, so the secure raster is identical to the plaintext one.' : `Here ${c.spike_mismatches} did (first at timestep ${c.first_mismatch[0]}, neuron ${c.first_mismatch[1]}), and the red cells in the raster show where.`}</li>` +
+    `<li>One image is a single example, not a guarantee. A fair statement needs many images (Stage 6).</li></ul>`;
+
+  const snn = MP.snn ? Object.fromEntries(MP.snn.rows.map(r => [r.name.split(/[ :]/)[0], r])) : {};
+  const est = key => snn[key] ? snn[key].megabytes * 1e6 : null;
+  const lines = [['Synaptic current', 'current', est('Synaptic'), 'estimate counted only the final reshare; the real run also cuts the sum back to the fixed-point format'],
+    ['Leak β·u', 'leak', est('Leak'), 'estimate said "free". It is not: the product of two fixed-point numbers has twice the fractional bits and must be truncated, which needs communication'],
+    ['Threshold u ≥ θ', 'thresh', est('Threshold'), 'comparison on 31-bit fixed-point values, measured in MP-SPDZ'],
+    ['Reset', 'reset', 0, 'estimate assumed a secret multiplication; with subtract-reset and a public whole-number θ it is free (a fractional θ would cost a truncation)']];
+  $('sl-est').innerHTML = '<tr><th>operation</th><th class="n">Phase 5 estimate</th><th class="n">measured</th><th>why they differ</th></tr>' +
+    lines.map(([n, m, e, why]) => `<tr><td>${n}</td><td class="n">${e === null ? 'n/a' : fmtB(Math.round(e))}</td><td class="n">${fmtB(part[m].per_image_bytes)}</td><td class="sub2">${why}</td></tr>`).join('');
+  $('sl-est-note').textContent = 'Estimates came from textbook formulas, measurements come from MP-SPDZ, so a gap is expected and useful. MP-SPDZ itself prints a hint that "program.use_trunc_pr = True" would make the truncations cheaper: a first optimisation candidate for Stage 5 (not applied here).';
+}
+
+function drawSlRaster() {
+  const {c, w, h} = fit($('sl-ras')), R = SL.result;
+  if (!R) { emptyMsg(c, w, h, 'Press "Run secure LIF on this image"'); return; }
+  const T = R.T, H = R.H, L = 4, top = 16, bot = 16, gap = 12, pw = (w - L - 4 - gap) / 2, ph = h - top - bot, cw = pw / T, rh = ph / H;
+  SL.geo = {top, rh, H, ph, L, pw, gap};
+  c.font = '10px ' + css('--mono'); c.textBaseline = 'top'; c.textAlign = 'left'; c.fillStyle = css('--muted');
+  c.fillText('plaintext', L, 2); c.fillText('secure', L + pw + gap, 2);
+  const t = Math.min(step, T - 1);
+  [[R.plain.spikes, L, '--input'], [R.secure.spikes, L + pw + gap, '--hidden']].forEach(([sp, x0, colv]) => {
+    c.fillStyle = css('--screen'); c.fillRect(x0, top, pw, ph);
+    c.fillStyle = 'rgba(139,92,246,.22)'; c.fillRect(x0 + t * cw, top, cw, ph);
+    c.fillStyle = 'rgba(139,92,246,.18)'; c.fillRect(x0, top + SL.sel * rh, pw, Math.max(1, rh));
+    for (let tt = 0; tt < T; tt++) for (let j = 0; j < H; j++) {
+      const a = R.plain.spikes[tt][j], b = R.secure.spikes[tt][j];
+      if (a !== b) { c.fillStyle = css('--output'); c.fillRect(x0 + tt * cw, top + j * rh - 1, Math.max(2, cw), Math.max(3, rh + 2)); }
+      else if (sp[tt][j]) { c.fillStyle = css(colv); c.fillRect(x0 + tt * cw + cw * .1, top + j * rh, cw * .8, Math.max(1, rh)); }
+    }
+  });
+  c.fillStyle = css('--muted'); c.textBaseline = 'top'; c.textAlign = 'center';
+  [0, Math.floor(T / 2), T - 1].forEach(tt => { c.fillText(tt, L + (tt + .5) * cw, h - bot + 3); c.fillText(tt, L + pw + gap + (tt + .5) * cw, h - bot + 3); });
+}
+
+function drawSlMem() {
+  const {c, w, h} = fit($('sl-mem')), R = SL.result;
+  if (!R) { emptyMsg(c, w, h, 'No result yet'); return; }
+  const T = R.T, j = SL.sel, pm = R.plain.membrane.map(r => r[j]), sm = R.secure.membrane.map(r => r[j]);
+  const L = 36, B = 16, Tp = 8, pw = w - L - 6, ph = h - B - Tp;
+  const mx = Math.max(R.threshold * 1.15, ...pm, ...sm), mn = Math.min(0, ...pm, ...sm);
+  const X = t => L + (t + .5) / T * pw, Y = v => Tp + ph - (v - mn) / (mx - mn) * ph;
+  c.font = '10px ' + css('--mono'); c.fillStyle = css('--muted'); c.textAlign = 'right'; c.textBaseline = 'middle';
+  c.fillText(mx.toFixed(0), L - 4, Tp); c.fillText(mn.toFixed(0), L - 4, Tp + ph);
+  c.strokeStyle = css('--spike'); c.setLineDash([4, 3]); c.beginPath(); c.moveTo(L, Y(R.threshold)); c.lineTo(L + pw, Y(R.threshold)); c.stroke(); c.setLineDash([]);
+  const t = Math.min(step, T - 1);
+  c.fillStyle = 'rgba(139,92,246,.22)'; c.fillRect(L + t / T * pw, Tp, pw / T, ph);
+  c.strokeStyle = css('--input'); c.lineWidth = 2; c.beginPath(); pm.forEach((v, i) => i ? c.lineTo(X(i), Y(v)) : c.moveTo(X(i), Y(v))); c.stroke(); c.lineWidth = 1;
+  c.fillStyle = css('--hidden'); sm.forEach((v, i) => { c.beginPath(); c.arc(X(i), Y(v), 2.5, 0, 7); c.fill(); });
+  c.fillStyle = css('--muted'); c.textAlign = 'center'; c.textBaseline = 'top';
+  [0, Math.floor(T / 2), T - 1].forEach(tt => c.fillText(tt, X(tt), h - B + 3));
+  const err = Math.max(...pm.map((v, i) => Math.abs(v - sm[i])));
+  $('sl-mem-sub').textContent = `neuron ${j}, membrane before reset; largest gap ${err.toFixed(4)}`;
+}
+
+function drawSl() { slRender(); drawSlRaster(); drawSlMem(); }
+
+$('sl-run').onclick = slStart;
+$('sl-ras').addEventListener('click', e => {
+  const R = SL.result, g = SL.geo; if (!R || !g) return;
+  const y = e.clientY - $('sl-ras').getBoundingClientRect().top;
+  const j = Math.floor((y - g.top) / g.rh);
+  if (j >= 0 && j < g.H) { SL.sel = j; drawSl(); }
+});
+
 function draw() {
   if (view === 1) { drawAnn(); return; }
   if (view === 2) { drawLif(); return; }
   if (view === 3) { drawStdp(); return; }
   if (view === 4) { drawReadout(); return; }
+  if (view === 5) { drawMpc(); return; }
+  if (view === 6) { drawSl(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();

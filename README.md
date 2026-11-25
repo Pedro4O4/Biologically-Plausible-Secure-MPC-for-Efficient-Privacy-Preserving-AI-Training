@@ -6,13 +6,16 @@
 ![PyTorch](https://img.shields.io/badge/PyTorch-CPU-ee4c2c?logo=pytorch&logoColor=white)
 ![MP-SPDZ](https://img.shields.io/badge/MPC-MP--SPDZ-5b5ea6)
 ![Stage](https://img.shields.io/badge/stage%201%20(plaintext)-complete-2ea44f)
-![MPC](https://img.shields.io/badge/MPC%20stages-not%20started-lightgrey)
+![MPC](https://img.shields.io/badge/MPC-secure%20LIF%20forward%20pass-lightgrey)
 
 B.Sc. thesis project, **Topic II**. This repository holds the full experimental code, from a plaintext
 reference implementation (done) towards a secure MPC prototype (next).
 
-> **Status.** Stage 1 (plaintext validation) is complete and reproducible. **No MPC code exists in this
-> repository yet**; nothing here makes a security or MPC-cost claim. The secure stages are listed in the
+> **Status.** Stage 1 (plaintext validation) is complete and reproducible. The MPC work has started: the three
+> building blocks (add, multiply, compare) are explained and measured (dashboard Phase 5), and the Phase 2 LIF layer's
+> forward pass runs on secret shares in MP-SPDZ and matches the plaintext layer (Phase 6, see
+> [Secure LIF forward pass](#secure-lif-forward-pass-phase-6)). **No secure training exists yet** (winner-take-all and the
+> STDP update are not built), and nothing here makes a security claim about the final system. The remaining stages are in the
 > [roadmap](#roadmap).
 
 ---
@@ -104,6 +107,41 @@ How to read this:
 > event-driven count is not directly usable, because skipping work for silent inputs reveals which inputs
 > were silent. Whether sparsity helps securely is exactly what Stages 3-6 will measure.
 
+## Secure LIF forward pass (Phase 6)
+
+The Phase 2 hidden layer (784 inputs, 100 LIF neurons, 25 timesteps, `beta = 0.9`, threshold 50, subtract-reset) computed
+by three MP-SPDZ parties on secret shares: party 0 holds the image spikes, party 1 the weights, party 2 only computes.
+Replicated ring protocol (3 parties, honest majority, semi-honest), 64-bit ring, fixed point with 16 fractional bits.
+All parties run on one machine, so **rounds and bytes** are meaningful, wall-clock time is not.
+
+| Check | Result |
+|---|---|
+| Spikes that differ from the plaintext layer | 0 of 2,500 on the two images tried (#0: 167 spikes, #3: 546 spikes) |
+| Largest membrane error | about 0.003 (the fixed-point step is 0.000015; the error accumulates through the leak) |
+
+| One timestep, all 100 neurons | Rounds | Data sent (all 3 parties) |
+|---|---:|---:|
+| Synaptic current `W·s` | 4 | 120 KB |
+| Leak `beta·u` | 3 | 116 KB |
+| Threshold `u >= theta` | 9 | 214 KB |
+| Reset `u - theta·spike` | 0 | 0 (theta = 50 is a whole number) |
+| **Whole forward pass, 25 timesteps** | **314** | **11.3 MB** (plus 0.8 MB once to share the inputs) |
+
+What this shows, and what it does not:
+
+- **The cost does not depend on the input.** The two images have 167 and 546 spikes and sent exactly the same number of
+  bytes: the secure program does the same work whatever the spikes are. The sparsity that makes the plaintext layer cheap
+  gives no saving here. This is the central question of the thesis, answered for one layer and one protocol.
+- **The Phase 5 estimates were off.** Multiplying by the public `beta` was estimated as free; it costs as much as the
+  matrix product because every fixed-point product must be truncated. A fractional public theta (1.5) also makes the
+  reset cost communication (3 rounds, about 82 KB per timestep in a quick check).
+- MP-SPDZ itself suggests `program.use_trunc_pr = True` to make truncation cheaper. That is the first optimisation candidate
+  for Stage 5 and is **not** applied.
+- The validation run opens every spike and membrane value to compare with plaintext. A real deployment would never open
+  them; the cost numbers come from separate runs that do not.
+- This is the forward pass only. Winner-take-all (an argmax) and the STDP update with a secret winner are still to be built, and
+  the Phase 5 estimates say they will dominate.
+
 ## Quick start
 
 Requires Python 3.12 and about 65 MB of disk for MNIST. CPU is sufficient.
@@ -117,7 +155,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 python scripts/download_mnist.py        # one-time dataset download into data/
-python -m unittest discover -s tests -v # 13 tests, a few seconds
+python -m unittest discover -s tests -v # 37 tests, a few seconds
 python src/app_server.py                # dashboard on http://127.0.0.1:8000
 ```
 
@@ -135,8 +173,10 @@ Open <http://127.0.0.1:8000>. The dashboard grows one phase at a time; each tab 
 | Phase 2 · LIF | Watch the hidden layer spike over time; click a neuron to inspect it; preview leak and threshold |
 | Phase 3 · STDP | Train unsupervised; watch the 100 neurons' weights turn into digit-like features |
 | Phase 4 · Readout | Train the readout; compare ANN vs SNN vs control; confusion matrix; operation counts |
+| Phase 5 · Secret sharing | Step through add / multiply / compare under 3-party replicated secret sharing with real numbers (what each party holds, computes and sends); see what one party can see; run the same operations in real MP-SPDZ and compare rounds and bytes |
+| Phase 6 · Secure LIF | Run the Phase 2 hidden layer on secret shares (3 local MP-SPDZ parties): plaintext vs secure spikes and membrane side by side, the six steps of one neuron's timestep, measured cost per operation, precision, and the gap to the Phase 5 estimates |
 
-**Training never starts on its own**; it only runs when you press the Train button. A different port can be
+**Training never starts on its own**; it only runs when you press the Train button. Phase 5's "Run in real MP-SPDZ" button needs MP-SPDZ built (`replicated-ring-party.x`); the dashboard tells you if something is missing. It starts 3 local parties and no training. A different port can be
 passed as the first argument: `python src/app_server.py 8001`. Trained models and metrics are saved in
 `results/` and reloaded on the next start (that folder is git-ignored).
 
@@ -161,8 +201,11 @@ To reproduce the table above, use `seed: 0` and the committed defaults, then pre
 ```
 configs/    experiment_config.yaml        all hyperparameters
 src/        encoding, lif_model, stdp, readout, ann_model, data, config_loader
+            mpc_sim.py, mpc_real.py       secret-sharing simulation + real MP-SPDZ runner (Phase 5)
+            mpc_lif.py                    secure LIF layer: runner, check against plaintext, cost (Phase 6)
             app_server.py + web/          local dashboard
-tests/      test_lif, test_stdp, test_readout   (unit tests, 13 total)
+mpc/        ops_demo.mpc, secure_lif.mpc, hello_mpc.mpc   MP-SPDZ programs (compiled from here, the submodule stays clean)
+tests/      test_lif, test_stdp, test_readout, test_mpc_sim, test_mpc_lif   (unit tests, 37 total)
 scripts/    download_mnist.py, snntorch_sanity_check.py
 MP-SPDZ/    MPC framework (git submodule; used from Stage 2 onwards)
 results/    generated models and metrics (git-ignored)
@@ -176,7 +219,7 @@ The thesis follows six stages. Stage 1 is split into the dashboard's Phases 0-4.
 |---|---|---|
 | 1 | Plaintext validation: dataset, encoding, LIF, STDP, readout, ANN baseline | **Done** (hyperparameters not yet tuned) |
 | 2 | Secure baseline: small conventional NN under MPC | Not started |
-| 3 | Microbenchmarks of secure SNN parts: membrane update, threshold, reset, local weight update | Not started |
+| 3 | Microbenchmarks of secure SNN parts: membrane update, threshold, reset, local weight update | Partly done: the LIF forward pass (current, leak, threshold, reset) runs and is measured (Phase 6); winner-take-all and the local weight update are not built |
 | 4 | End-to-end secure SNN training prototype | Not started |
 | 5 | Profiling, bottleneck analysis, at least one measured optimisation | Not started |
 | 6 | Comparison: plaintext ANN / plaintext SNN / secure ANN / secure SNN (accuracy, time, communication, rounds, leakage) | Not started |
@@ -207,4 +250,4 @@ standard library and a single static HTML page (no framework, no build step).
 
 ## Author
 
-Pedro ([@Pedro4O4](https://github.com/Pedro4O4)). B.Sc. Computer Science, IT Security.
+Ebram Nageh ([@Pedro4O4](https://github.com/Pedro4O4)). B.Sc. Computer Science (IT Security), German International University (GIU).

@@ -1,0 +1,10 @@
+# Each party contributes one secret input. Nobody sees the others' inputs.
+a = sint.get_input_from(0)
+b = sint.get_input_from(1)
+c = sint.get_input_from(2)
+total = a + b + c          # addition: free (local)
+prod = a * b               # multiplication of two secrets: needs communication
+bigger = a > b             # secure comparison: much more expensive
+print_ln('sum = %s', total.reveal())
+print_ln('a*b = %s', prod.reveal())
+print_ln('a > b ? %s', bigger.reveal())

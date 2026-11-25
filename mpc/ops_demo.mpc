@@ -1,0 +1,21 @@
+# Phase 5: one tiny program per operation, so each one can be measured on its own.
+# Party 0 inputs a, party 1 inputs b. The compile-time argument picks the operation:
+#   ./compile.py -R 64 ops_demo.mpc <mode>      mode = base | add | mul | cmp
+# "base" only shares the inputs and opens a, so (op cost) = (op program) - (base program).
+mode = program.args[1] if len(program.args) > 1 else 'base'
+
+a = sint.get_input_from(0)
+b = sint.get_input_from(1)
+
+if mode == 'base':
+    result = a
+elif mode == 'add':
+    result = a + b          # local: no communication
+elif mode == 'mul':
+    result = a * b          # one round
+elif mode == 'cmp':
+    result = a < b          # bit decomposition: many rounds
+else:
+    raise CompilerError('unknown mode ' + mode)
+
+print_ln('RESULT %s', result.reveal())
