@@ -1,5 +1,5 @@
 # Phase 6: the Phase 2 LIF layer computed on secret shares (fixed point).
-#   compile:  ./compile.py -R 64 secure_lif.mpc <mode> <T> <n_in> <H> <beta> <threshold>
+#   compile:  ./compile.py -M -R 64 secure_lif.mpc <mode> <T> <n_in> <H> <beta> <threshold>
 #   party 0 (data owner)  gives the spike trains S (T x n_in, values 0/1) and H extra bits F
 #   party 1 (model owner) gives the weights W (n_in x H) and a membrane vector U0 (H)
 #

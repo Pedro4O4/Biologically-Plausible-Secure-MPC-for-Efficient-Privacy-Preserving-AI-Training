@@ -124,6 +124,14 @@ select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border
 .good{color:var(--hidden)}.bad{color:var(--output)}
 .sl-lines{margin:6px 0 0;padding-left:16px;font-size:12px;line-height:1.5}
 .sl-lines li{margin-bottom:4px}
+/* ---- Phase 7: secure STDP image ---- */
+#view-7{grid-template-rows:430px 430px 360px 290px;overflow:auto;align-content:start}
+@media (max-width:1000px){#view-7{grid-template-rows:none;grid-auto-rows:auto}}
+.pill{border:1px solid var(--line);border-radius:999px;padding:0 9px;font:11px var(--mono);background:var(--bg);color:var(--ink);cursor:pointer}
+.pill.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.sel{display:flex;gap:5px;flex-wrap:wrap;flex:none;margin:4px 0}
+.tbl td .bar{display:inline-block;vertical-align:middle}
+.kpi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin:4px 0 6px}
 </style>
 </head>
 <body>
@@ -436,6 +444,59 @@ select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border
       <div class="scroll"><table class="tbl" id="sl-est"></table><div class="note" id="sl-est-note"></div></div>
     </section>
   </div>
+
+  <div class="grid" id="view-7" hidden>
+    <section class="panel c3">
+      <h2>Secure STDP image <small>winner-take-all and learning on secret shares</small></h2>
+      <div class="scroll">
+        <div class="trainbar"><button id="ss-run" class="primary" type="button">Run one secure STDP image</button></div>
+        <div class="progress"><div id="ss-prog"></div></div>
+        <div id="ss-state" class="mono sub2"></div>
+        <div id="ss-stale" class="note"></div>
+        <dl class="kv" id="ss-facts" style="margin-top:6px"></dl>
+        <ul class="sl-lines">
+          <li>It starts from your trained STDP layer (or an untrained one if you have not trained). Your saved model is <b>never changed</b>: everything runs on copies, for one image.</li>
+          <li>Secret: the image spikes, the weights, the thresholds, the membranes, the trace, and <b>who the winner is</b>.</li>
+          <li>To CHECK the answer we open the final weights, the thresholds and the winner of every step once. A real deployment would never open them.</li>
+        </ul>
+      </div>
+    </section>
+    <section class="panel c5">
+      <h2>Who wins at each timestep <small id="ss-win-sub"></small></h2>
+      <div class="cv"><canvas id="ss-win"></canvas></div>
+      <div class="legend"><span><i style="background:var(--input)"></i>plaintext winner (neuron number)</span><span><i style="background:var(--hidden)"></i>secure winner</span><span><i style="background:var(--output)"></i>they disagree</span><span>&middot; = nobody reached the threshold</span></div>
+    </section>
+    <section class="panel c4">
+      <h2>What the winner learned <small id="ss-w-sub"></small></h2>
+      <div class="sel" id="ss-sel"></div>
+      <div class="cv"><canvas id="ss-w"></canvas></div>
+      <div class="note">its 784 incoming weights as a 28 &times; 28 image: before, after (plaintext), after (secure), and the difference between the last two (red, brighter = bigger)</div>
+    </section>
+    <section class="panel c8">
+      <h2>One image of learning, operation by operation <small>measured in MP-SPDZ, data = all 3 parties</small></h2>
+      <div class="scroll"><table class="tbl" id="ss-parts"></table></div>
+    </section>
+    <section class="panel c4">
+      <h2>Where the data goes <small>per image</small></h2>
+      <div class="scroll"><table class="tbl" id="ss-share"></table><div class="note" id="ss-share-note"></div></div>
+    </section>
+    <section class="panel c4">
+      <h2>Is the secure answer right? <small>one image</small></h2>
+      <div class="scroll" id="ss-prec"></div>
+    </section>
+    <section class="panel c4">
+      <h2>Two savings, measured <small>both change cost, not results</small></h2>
+      <div class="scroll" id="ss-opt"></div>
+    </section>
+    <section class="panel c4">
+      <h2>Truncation: speed or secrecy? <small>whole image</small></h2>
+      <div class="scroll"><table class="tbl" id="ss-trunc"></table><div class="note" id="ss-trunc-note"></div></div>
+    </section>
+    <section class="panel c12">
+      <h2>Measured vs the Phase 5 estimates <small>per image, data sent by all 3 parties</small></h2>
+      <div class="scroll"><table class="tbl" id="ss-est"></table><div class="note" id="ss-est-note"></div></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -449,7 +510,8 @@ const PHASES = [
   ["4", "Readout", true],
   ["5", "Secret sharing", true],
   ["6", "Secure LIF", true],
-  ["7+", "Secure learning", false],
+  ["7", "Secure learning", true],
+  ["8+", "End to end", false],
 ];
 let view = 0;
 let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, result: null}, annTimer = null;
@@ -457,7 +519,7 @@ let ANN = {job: {running: false, epoch: 0, total: 0, history: [], error: null}, 
 function renderChips() {
   $('phases').innerHTML = PHASES.map(([n, name, built]) => {
     if (!built) return `<button class="chip todo" disabled>Phase ${n} · ${name}</button>`;
-    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result) || (n === '4' && RD.result) || (n === '5' && MP.ran) || (n === '6' && SL.result);
+    const done = n === '0' || n === '2' || (n === '1' && ANN.result) || (n === '3' && ST.result) || (n === '4' && RD.result) || (n === '5' && MP.ran) || (n === '6' && SL.result) || (n === '7' && SS.result);
     return `<button class="chip ${done ? 'done' : ''} ${+n === view ? 'active' : ''}" data-view="${n}">Phase ${n} · ${name}${done ? ' ✓' : ''}</button>`;
   }).join('');
 }
@@ -466,7 +528,7 @@ $('phases').addEventListener('click', e => {
 });
 function setView(v) {
   view = v;
-  [0, 1, 2, 3, 4, 5, 6].forEach(i => $('view-' + i).hidden = i !== v);
+  [0, 1, 2, 3, 4, 5, 6, 7].forEach(i => $('view-' + i).hidden = i !== v);
   $('controls-0').hidden = v === 1 || v === 5;
   renderChips();
   if (v === 1) pollAnn();
@@ -475,6 +537,7 @@ function setView(v) {
   if (v === 4) { pollAnn(); pollReadout(); loadRdPredict(); }
   if (v === 5) mpEnter();
   if (v === 6) slEnter();
+  if (v === 7) ssEnter();
   requestAnimationFrame(draw);
 }
 
@@ -1396,7 +1459,7 @@ function slRender() {
     row(3, `leak<div class="sub2">β·u = ${R.beta} × ${n4(S.uPrev)}</div>`, n4(P.leak), n4(S.leak), escHtml(part.leak.how), cost('leak')) +
     row(4, `integrate<div class="sub2">u = β·u + I</div>`, n4(P.u), n4(S.u), 'addition of two shared values: local, free', free) +
     row(5, `threshold<div class="sub2">spike = (u ≥ ${R.threshold})</div>`, `${n4(P.u)} ≥ ${R.threshold}? ${P.fired}`, `${n4(S.u)} ≥ ${R.threshold}? ${S.fired}`, escHtml(part.thresh.how), cost('thresh')) +
-    row(6, `reset<div class="sub2">u ← u - θ·spike</div>`, n4(P.after), n4(S.after), escHtml(part.reset.how) + `<div class="sub2">free here because θ = ${R.threshold} is a whole number. A fractional public θ cost 3 rounds and about 82 KB per timestep in a quick check (θ = 1.5, 100 neurons). A secret adaptive θ (STDP) would need a full secret multiplication.</div>`, cost('reset'));
+    row(6, `reset<div class="sub2">u ← u - θ·spike</div>`, n4(P.after), n4(S.after), escHtml(part.reset.how) + `<div class="sub2">free here because θ = ${R.threshold} is a whole number. With this program's plain fixed-point multiplication, a fractional public θ cost 3 rounds and about 82 KB per timestep in a quick check (θ = 1.5, 100 neurons); multiplying the raw integer instead (as Phase 7 does) would be local. A secret adaptive θ (STDP) would need a full secret multiplication.</div>`, cost('reset'));
 
   const maxB = Math.max(...R.parts.map(p => p.per_step.global_bytes), 1);
   const T = R.T;
@@ -1482,6 +1545,144 @@ $('sl-ras').addEventListener('click', e => {
   if (j >= 0 && j < g.H) { SL.sel = j; drawSl(); }
 });
 
+// ---------------- Phase 7: one STDP training image on secret shares ----------------
+const SS = {result: null, job: null, avail: true, reason: '', trained: false, sel: 0, selFor: '', timer: 0};
+const mbs = n => fmtB(Math.round(n));
+
+function ssEnter() { if (!MP.snn) mpSnn(); ssPoll(); }
+
+async function ssPoll() {
+  clearTimeout(SS.timer);
+  let st;
+  try { st = await api('/api/sstdp/status'); } catch (e) { return; }
+  SS.result = st.result; SS.job = st.job; SS.avail = st.available; SS.reason = st.reason; SS.trained = st.trained;
+  renderChips(); if (view === 7) drawSs();
+  if (st.job.running) SS.timer = setTimeout(ssPoll, 700);
+}
+
+async function ssStart() {
+  try { await api('/api/sstdp/start', {index: +$('index').value, resample}); hideErr(); } catch (e) { showErr(e); return; }
+  ssPoll();
+}
+
+function ssRender() {
+  const R = SS.result, job = SS.job || {running: false, progress: 0, phase: '', error: null};
+  $('ss-run').disabled = job.running || !SS.avail;
+  $('ss-prog').style.width = (job.progress * 100) + '%';
+  $('ss-state').innerHTML = job.error ? `<span class="err">${escHtml(job.error)}</span>` : !SS.avail ? `<span class="err">${escHtml(SS.reason)}</span>`
+    : job.running ? escHtml(job.phase) : R ? 'done' : 'not run yet';
+  const L = CFG.learning, A = CFG.architecture;
+  const facts = R ? [['image', `#${R.image_index} (digit ${R.label})`], ['starts from', R.start_state], ['timesteps T', R.T], ['inputs / hidden', `${R.n_in} / ${R.H}`],
+      ['learning rate', R.learning.lr], ['trace decay', R.learning.trace_decay], ['x_target', R.learning.x_target], ['θ_plus', R.learning.theta_plus], ['ring', `${R.fixed_point.ring_bits} bits, ${R.fixed_point.fractional_bits} fractional`]]
+    : [['starts from', SS.trained ? 'trained STDP layer' : 'untrained layer'], ['timesteps T', CFG.simulation.num_steps], ['inputs / hidden', `${A.num_inputs} / ${A.num_hidden}`], ['learning rate', L.lr], ['trace decay', L.trace_decay]];
+  $('ss-facts').innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('ss-stale').textContent = R && (R.image_index !== +$('index').value || R.resample !== resample) ? `Showing image #${R.image_index}. Press Run to compute image #${$('index').value}.` : '';
+  if (!R) {
+    const msg = '<tr><td class="sub2">Press "Run one secure STDP image". It takes about half a minute: it compiles ~20 small MP-SPDZ programs, runs one whole image on 3 local parties to check it, and measures every operation. Nothing is trained and your model is not touched.</td></tr>';
+    $('ss-parts').innerHTML = msg; ['ss-share', 'ss-trunc', 'ss-est'].forEach(i => $(i).innerHTML = ''); ['ss-prec', 'ss-opt', 'ss-sel'].forEach(i => $(i).innerHTML = '');
+    ['ss-share-note', 'ss-trunc-note', 'ss-est-note', 'ss-win-sub', 'ss-w-sub'].forEach(i => $(i).textContent = ''); return;
+  }
+  const stamp = `${R.image_index}/${R.resample}`;
+  if (SS.selFor !== stamp) { SS.selFor = stamp; SS.sel = 0; }
+  const T = R.T, c = R.check, ok = c.winner_mismatches === 0;
+  const part = Object.fromEntries(R.parts.map(p => [p.mode, p]));
+  $('ss-win-sub').textContent = `${c.winning_steps_plain} of ${T} timesteps have a winner`;
+  $('ss-sel').innerHTML = R.neurons.length ? R.neurons.map((n, k) => `<button type="button" class="pill ${k === SS.sel ? 'on' : ''}" data-k="${k}">neuron ${n.neuron}</button>`).join('') : '<span class="sub2">nobody won in this image, so no weights changed (except the rescaling)</span>';
+
+  const total = R.total.global_bytes;
+  const maxB = Math.max(...R.parts.map(p => p.per_image_bytes), 1);
+  $('ss-parts').innerHTML = '<tr><th>#</th><th>operation</th><th>how it is done on shares</th><th class="n">once</th><th class="n">times</th><th class="n">per image</th><th></th></tr>' +
+    R.parts.map((p, k) => `<tr><td>${k + 1}</td><td>${escHtml(p.name)}</td><td>${escHtml(p.how)}</td><td class="n">${p.per_unit.rounds} r, ${fmtB(p.per_unit.global_bytes)}</td><td class="n">${p.per === 'step' ? '× ' + T : '× 1'}</td><td class="n">${fmtB(p.per_image_bytes)}</td><td style="width:60px"><div class="bar" style="width:${p.per_image_bytes / maxB * 100}%"></div></td></tr>`).join('') +
+    `<tr class="sum"><td></td><td>whole image (measured)</td><td colspan="2"></td><td class="n">${R.total.rounds} rounds</td><td class="n">${fmtB(total)}</td><td></td></tr>` +
+    `<tr><td colspan="7" class="sub2">"r" = rounds (communication steps). The parts add up to ${fmtB(R.sum_of_parts_bytes)}; sharing the inputs, once, before this: ${fmtB(R.inputs_bytes)}. Rounds of different timesteps cannot overlap because each timestep needs the previous membrane and weights.</td></tr>`;
+
+  const top = R.parts.slice().sort((a, b) => b.per_image_bytes - a.per_image_bytes).slice(0, 6);
+  $('ss-share').innerHTML = top.map(p => `<tr><td>${escHtml(p.name)}</td><td class="n">${(p.per_image_bytes / R.sum_of_parts_bytes * 100).toFixed(0)}%</td><td style="width:90px"><div class="bar" style="width:${p.per_image_bytes / R.sum_of_parts_bytes * 100}%"></div></td></tr>`).join('');
+  $('ss-share-note').textContent = `The cost does not depend on the input: the secure program does the same work whether 0 or ${T} timesteps have a winner (the tests run all-zero, all-one and random spikes and get identical rounds and bytes). Only the biggest 6 operations are listed.`;
+
+  $('ss-prec').innerHTML = `<div class="kpi">` + [
+      [`<span class="${ok ? 'good' : 'bad'}">${c.winner_mismatches} / ${c.steps}</span>`, 'timesteps with a different winner'],
+      [`${c.winning_steps_secure} vs ${c.winning_steps_plain}`, 'secure vs plaintext winning steps'],
+      [c.max_weight_error.toFixed(5), 'largest weight error'], [c.mean_weight_error.toExponential(1), 'average weight error'],
+      [c.max_theta_error.toFixed(5), 'largest threshold (θ) error'], [c.lsb.toExponential(2), 'fixed-point step']
+    ].map(([a, b]) => `<div class="stat"><b>${a}</b><span>${b}</span></div>`).join('') + '</div>' +
+    `<ul class="sl-lines"><li>${ok ? 'The same neuron wins at every timestep, so the learning follows the same path as the plaintext STDP.' : `The winner differed at timestep ${c.first_mismatch}: two neurons were closer than the rounding error and the secure run picked the other one. After that the two runs diverge.`}</li>` +
+    `<li>A winner can only differ when two neurons' margins (u - threshold) lie within the rounding error. Ties go to the lowest index, like plaintext argmax.</li>` +
+    `<li>This checks ONE image from a given state. Over many images the rounding errors can accumulate; that needs a longer test (Stage 6).</li></ul>`;
+
+  const cur = part.current.per_unit.global_bytes, curT = R.current_trunc.global_bytes, nv = R.naive_clamp.global_bytes, cl = part.clamp.per_unit.global_bytes;
+  $('ss-opt').innerHTML = `<ul class="sl-lines">` +
+    `<li><b>Synaptic current without truncation.</b> Spikes are 0/1 integers, so (spikes) × (raw fixed-point weights) is exact and needs no truncation. One timestep: <b>${fmtB(cur)}</b>, against <b>${fmtB(curT)}</b> when the same product is done with fixed-point matrices as in Phase 6 (${(curT / Math.max(cur, 1)).toFixed(0)}× less). Phase 6 used the expensive form.</li>` +
+    `<li><b>Clamp only the winner's column.</b> The naive rule clamps every weight (2 comparisons each, ${(R.n_in * R.H).toLocaleString('en-US')} weights): <b>${mbs(nv)}</b> per timestep. We gather the winner's column (784 values), clamp that, and write it back: <b>${mbs(cl)}</b> per timestep, ${(nv / cl).toFixed(0)}× less (= the number of neurons, as expected). Per image: ${(nv * T / 1e9).toFixed(1)} GB vs ${mbs(cl * T)}.</li>` +
+    `<li>Both are measured, and only the cheaper versions are used here. They are the first two measured optimisations for Stage 5.</li></ul>`;
+
+  const nr = R.total_nearest, pr = R.total, lk = part.leak.per_unit.global_bytes, lkn = R.leak_nearest.global_bytes;
+  $('ss-trunc').innerHTML = '<tr><th></th><th class="n">probabilistic (default)</th><th class="n">round to nearest</th></tr>' +
+    `<tr><td>whole image: rounds</td><td class="n">${pr.rounds.toLocaleString('en-US')}</td><td class="n">${nr.rounds.toLocaleString('en-US')}</td></tr>` +
+    `<tr><td>whole image: data</td><td class="n">${mbs(pr.global_bytes)}</td><td class="n">${mbs(nr.global_bytes)}</td></tr>` +
+    `<tr><td>leak β·u, one timestep</td><td class="n">${fmtB(lk)}</td><td class="n">${fmtB(lkn)}</td></tr>`;
+  $('ss-trunc-note').textContent = `MP-SPDZ prints a warning when compiling: its default probabilistic truncation "leaks some information" (see eprint 2024/1127) and it offers sfix.round_nearest = True instead. Every other number on this page uses the default. The exact version costs ${(nr.global_bytes / pr.global_bytes).toFixed(1)}× the data and ${(nr.rounds / pr.rounds).toFixed(1)}× the rounds for the whole image. Whether the leakage matters for our threat model is a question for the security analysis and the supervisor; we claim nothing about it here.`;
+
+  const snn = MP.snn ? MP.snn.rows : [], est = pre => { const r = snn.find(x => x.name.startsWith(pre)); return r ? r.megabytes * 1e6 : null; };
+  const sum = (...m) => m.reduce((a, k) => a + part[k].per_image_bytes, 0);
+  const lines = [['Threshold test', est('Threshold'), part.thresh.per_image_bytes, 'comparison on 31-bit values, θ secret'],
+    ['Winner-take-all', est('Winner-take-all'), part.wta.per_image_bytes, 'the estimate was a lower bound (comparisons only); the real one also builds the one-hot and breaks ties'],
+    ['STDP update, secret winner', est('STDP update'), sum('gather', 'delta', 'scatter', 'theta'), 'about equal, but for different reasons: the estimate paid 2 products for every one of the 78,400 weights; the real step pays 1 product per weight to write the column back, plus 2 truncated products on the 784 gathered values (a truncated product costs about 50 plain ones, so these add up to the same total)'],
+    ['Keep weights in [0, w_max]', est('clamp'), part.clamp.per_image_bytes, 'estimate was the naive "clamp everything"; the real step clamps the winner\'s column only'],
+    ['Input trace and rescaling', null, sum('trace', 'normalize'), 'not in the Phase 5 table at all: they turned out to be two of the three biggest costs']];
+  $('ss-est').innerHTML = '<tr><th>operation</th><th class="n">Phase 5 estimate</th><th class="n">measured</th><th>why they differ</th></tr>' +
+    lines.map(([n, e, m, why]) => `<tr><td>${n}</td><td class="n">${e === null ? 'n/a' : mbs(e)}</td><td class="n">${mbs(m)}</td><td class="sub2">${why}</td></tr>`).join('');
+  $('ss-est-note').textContent = `One image of secure STDP learning sends about ${mbs(total)} between the parties in ${R.total.rounds.toLocaleString('en-US')} rounds. In plaintext only the ${c.winning_steps_plain} winning steps change any weights. A full epoch of ${CFG.data.num_train.toLocaleString('en-US')} images at this cost would send about ${(total * CFG.data.num_train / 1e12).toFixed(1)} TB between the parties: the number to bring down in Stage 5 and to report honestly in Stage 6.`;
+}
+
+function drawSsWin() {
+  const {c, w, h} = fit($('ss-win')), R = SS.result;
+  if (!R) { emptyMsg(c, w, h, 'Press "Run one secure STDP image"'); return; }
+  const T = R.T, L = 60, top = 24, rowH = Math.min(46, (h - top - 30) / 2), cw = (w - L - 4) / T;
+  c.font = '10px ' + css('--mono'); c.textBaseline = 'middle';
+  c.fillStyle = css('--muted'); c.textAlign = 'right'; c.fillText('plaintext', L - 6, top + rowH / 2); c.fillText('secure', L - 6, top + rowH * 1.5 + 6);
+  c.textAlign = 'center';
+  const t = Math.min(step, T - 1);
+  c.fillStyle = 'rgba(139,92,246,.22)'; c.fillRect(L + t * cw, top - 4, cw, rowH * 2 + 14);
+  R.plain.winners.forEach((p, i) => {
+    const s = R.secure.winners[i], bad = p !== s, x = L + i * cw;
+    [[p, top, '--input'], [s, top + rowH + 6, '--hidden']].forEach(([v, y, colv]) => {
+      c.fillStyle = bad ? css('--output') : v >= 0 ? css(colv) : 'rgba(127,139,163,.12)';
+      c.fillRect(x + 1, y, cw - 2, rowH);
+      c.fillStyle = v >= 0 ? '#000' : css('--muted'); c.fillText(v >= 0 ? v : '·', x + cw / 2, y + rowH / 2);
+    });
+  });
+  c.fillStyle = css('--muted'); c.textBaseline = 'top';
+  [0, Math.floor(T / 2), T - 1].forEach(i => c.fillText(i, L + (i + .5) * cw, top + rowH * 2 + 14));
+  c.textAlign = 'left'; c.fillText('timestep', L, 4);
+}
+
+function drawSsW() {
+  const {c, w, h} = fit($('ss-w')), R = SS.result;
+  if (!R || !R.neurons.length) { emptyMsg(c, w, h, R ? 'No winner, nothing to show' : 'Press Run'); return; }
+  const n = R.neurons[Math.min(SS.sel, R.neurons.length - 1)];
+  $('ss-w-sub').textContent = `neuron ${n.neuron}`;
+  const lab = 14, gap = 6, size = Math.max(20, Math.min((w - gap * 3) / 4, h - lab - 2));
+  const mx = Math.max(...n.before, ...n.plain, ...n.secure, 1e-9);
+  const diff = n.plain.map((v, i) => Math.abs(v - n.secure[i])), dm = Math.max(...diff, 3e-5 * 2);
+  const tiles = [['before', n.before, 'g'], ['after, plain', n.plain, 'g'], ['after, secure', n.secure, 'g'], ['difference', diff, 'r']];
+  c.font = '10px ' + css('--mono'); c.textAlign = 'center'; c.textBaseline = 'top';
+  tiles.forEach(([name, arr, kind], k) => {
+    const x0 = k * (size + gap), cell = size / 28;
+    c.fillStyle = css('--muted'); c.fillText(name, x0 + size / 2, 0);
+    for (let i = 0; i < 784; i++) {
+      const v = kind === 'g' ? Math.round(255 * arr[i] / mx) : Math.round(255 * Math.min(1, arr[i] / dm));
+      c.fillStyle = kind === 'g' ? `rgb(${v},${v},${v})` : `rgb(${v},${Math.round(v * .25)},${Math.round(v * .35)})`;
+      c.fillRect(x0 + (i % 28) * cell, lab + Math.floor(i / 28) * cell, Math.ceil(cell), Math.ceil(cell));
+    }
+  });
+}
+
+function drawSs() { ssRender(); drawSsWin(); drawSsW(); }
+
+$('ss-run').onclick = ssStart;
+$('ss-sel').addEventListener('click', e => { const b = e.target.closest('button[data-k]'); if (b) { SS.sel = +b.dataset.k; drawSs(); } });
+
 function draw() {
   if (view === 1) { drawAnn(); return; }
   if (view === 2) { drawLif(); return; }
@@ -1489,6 +1690,7 @@ function draw() {
   if (view === 4) { drawReadout(); return; }
   if (view === 5) { drawMpc(); return; }
   if (view === 6) { drawSl(); return; }
+  if (view === 7) { drawSs(); return; }
   if (!D) return;
   $('step').value = step; $('step-o').textContent = step;
   sizeScreens(); drawImages(); drawNetwork(); drawRaster(); drawBars();

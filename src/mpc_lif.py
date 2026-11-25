@@ -33,7 +33,7 @@ PARTS = (("current", "Synaptic current  I = W·s", "matrix product (secret spike
 
 
 def schedule_name(mode, T, N, H, beta, thr):
-    return f"secure_lif-{mode}-{T}-{N}-{H}-{beta}-{thr}"
+    return f"secure_lif-{mode}-{T}-{N}-{H}-{beta}-{thr}-M"      # the trailing M makes old (unordered) builds stale
 
 
 def compile_mode(mode, T, N, H, beta, thr):
@@ -41,7 +41,7 @@ def compile_mode(mode, T, N, H, beta, thr):
     sch = SPDZ / "Programs" / "Schedules" / f"{name}.sch"
     if sch.exists() and sch.stat().st_mtime >= PROGRAM.stat().st_mtime:
         return name
-    code, out = mpc_real.sh(["python3", "compile.py", "-R", "64", str(PROGRAM), mode, str(T), str(N), str(H), str(beta), str(thr)], 600)
+    code, out = mpc_real.sh(["python3", "compile.py", "-M", "-R", "64", str(PROGRAM), mode, str(T), str(N), str(H), str(beta), str(thr), "M"], 600)
     if code != 0 or not sch.exists():
         raise RuntimeError("MP-SPDZ compile failed: " + out[-500:])
     return name

@@ -28,6 +28,7 @@ from lif_model import LIFLayer
 import mpc_lif
 import mpc_real
 import mpc_sim
+import mpc_stdp
 from readout import LinearReadout, classification_metrics
 from stdp import STDPTrainer
 
@@ -358,6 +359,51 @@ def slif_status():
     return {"available": ok, "reason": why, "job": dict(SLIF_JOB), "result": SLIF_RESULT}
 
 
+# ---------- Phase 7: one STDP training image on secret shares ----------
+SSTDP_JOB = {"running": False, "phase": "", "progress": 0.0, "error": None}
+SSTDP_RESULT = None
+if (SLIF_DIR / "secure_stdp.json").exists():
+    SSTDP_RESULT = json.loads((SLIF_DIR / "secure_stdp.json").read_text())
+
+
+def _sstdp_run(index, resample):
+    global SSTDP_RESULT
+    try:
+        index, spikes = _encode(index, resample)
+        n_in, n_hid = CONFIG["architecture"]["num_inputs"], CONFIG["architecture"]["num_hidden"]
+        layer = LIFLayer(n_in, n_hid, CONFIG["neuron"], CONFIG["seed"])           # a COPY: the saved model is never touched
+        trained = STDP_RESULT is not None
+        if trained:
+            with _stdp_lock:
+                layer.W, layer.theta = STDP_LAYER.W.clone(), STDP_LAYER.theta.clone()
+        res = mpc_stdp.run_secure_stdp(layer, CONFIG["learning"], spikes, lambda phase, frac: SSTDP_JOB.update(phase=phase, progress=frac))
+        res.update(image_index=index, resample=int(resample), label=int(LABELS[index]), start_state="trained STDP layer" if trained else "untrained layer")
+        SLIF_DIR.mkdir(parents=True, exist_ok=True)
+        (SLIF_DIR / "secure_stdp.json").write_text(json.dumps(res))
+        SSTDP_RESULT = res
+        SSTDP_JOB["progress"] = 1.0
+    except Exception as e:
+        SSTDP_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        SSTDP_JOB["running"] = False
+        mpc_real.RUN_LOCK.release()
+
+
+def sstdp_start(index, resample):
+    global SSTDP_RESULT
+    if not mpc_real.RUN_LOCK.acquire(blocking=False):
+        return False
+    SSTDP_RESULT = None
+    SSTDP_JOB.update(running=True, phase="starting", progress=0.0, error=None)
+    threading.Thread(target=_sstdp_run, args=(index, resample), daemon=True).start()
+    return True
+
+
+def sstdp_status():
+    ok, why = mpc_real.available()
+    return {"available": ok, "reason": why, "job": dict(SSTDP_JOB), "result": SSTDP_RESULT, "trained": STDP_RESULT is not None}
+
+
 def info():
     return {
         "config": CONFIG,
@@ -456,6 +502,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(stdp_weights())
         if path == "/api/slif/status":
             return self._json(slif_status())
+        if path == "/api/sstdp/status":
+            return self._json(sstdp_status())
         if path == "/api/mpc/real/status":
             return self._json(mpc_real.status())
         name = "index.html" if path == "/" else path.lstrip("/")
@@ -494,6 +542,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/mpc/snn":
                 return self._json(mpc_sim.snn_preview(CONFIG["simulation"]["num_steps"], CONFIG["architecture"]["num_hidden"],
                                                       CONFIG["architecture"]["num_inputs"], int(body.get("bits", 64))))
+            if self.path == "/api/sstdp/start":
+                return self._json({"started": sstdp_start(body.get("index", 0), body.get("resample", 0))})
             if self.path == "/api/slif/start":
                 return self._json({"started": slif_start(body.get("index", 0), body.get("resample", 0))})
             if self.path == "/api/mpc/real/start":

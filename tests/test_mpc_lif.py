@@ -43,7 +43,7 @@ class TestParsingAndComparison(unittest.TestCase):
         self.assertEqual(c["cells"], 4)
 
     def test_schedule_name_matches_what_mp_spdz_creates(self):
-        self.assertEqual(mpc_lif.schedule_name("full", 25, 784, 100, 0.9, 50.0), "secure_lif-full-25-784-100-0.9-50.0")
+        self.assertEqual(mpc_lif.schedule_name("full", 25, 784, 100, 0.9, 50.0), "secure_lif-full-25-784-100-0.9-50.0-M")
 
 
 class TestGuards(unittest.TestCase):

@@ -1,0 +1,274 @@
+# Phase 7: one STDP training image on secret shares (winner-take-all + trace-based STDP update).
+# It mirrors src/stdp.py :: STDPTrainer.train_sample step by step.
+#
+#   compile: ./compile.py -M -R 64 secure_stdp.mpc <mode> <T> <N> <H> <beta> <thr> <decay> <lr> <x_target> <w_max> <theta_plus> <w_norm> [rn]
+#   rn = use round-to-nearest truncation (MP-SPDZ warns that its default probabilistic truncation leaks some information)
+#   party 0 (data owner)  : spike trains S (T x N bits)
+#   party 1 (model owner) : weights W (N x H), adaptive thresholds THETA (H), and helper values for the
+#                           one-operation benchmarks: U0 (H), TR (N), COL (N), OH (H bits). Values are
+#                           RAW fixed point integers (x * 2^16), spikes and one-hots are 0/1.
+#
+# modes: full = the whole image, then OPENS the final weights, thresholds and the winner of every step
+#               (VALIDATION ONLY)
+#        run  = the same computation, opens only the number of winning steps (the real cost)
+#        base = share the inputs, open one value
+#        trace current leak thresh wta gather delta clamp scatter theta reset normalize
+#               = ONE timestep of that operation (normalize: once per image)
+#        current_trunc = the synaptic current done with fixed-point matrices (Phase 6 style, for comparison)
+#        clamp_all     = clamping EVERY weight (the naive alternative to clamping only the winner's column)
+mode = program.args[1]
+T, N, H = int(program.args[2]), int(program.args[3]), int(program.args[4])
+BETA, THR, DECAY, LR, XT, WMAX, TPLUS, WNORM = [float(x) for x in program.args[5:13]]
+
+sfix.set_precision(16, 31)
+if len(program.args) > 13 and program.args[13] == 'rn':
+    sfix.round_nearest = True       # exact rounding instead of MP-SPDZ's default probabilistic truncation
+SCALE = 2 ** 16
+TPLUS_RAW = int(round(TPLUS * SCALE))
+
+
+def raw_to_fix(v):
+    return sfix._new(v)
+
+
+# ---------------------------------------------------------------- inputs
+S = sint.Matrix(T, N)
+S.input_from(0)
+W = sint.Matrix(N, H)               # raw fixed point
+W.input_from(1)
+TH = sint.Array(H)
+TH.input_from(1)
+U0 = sint.Array(H)
+U0.input_from(1)
+TR0 = sint.Array(N)
+TR0.input_from(1)
+COL0 = sint.Array(N)
+COL0.input_from(1)
+OH0 = sint.Array(H)
+OH0.input_from(1)
+
+
+# ---------------------------------------------------------------- building blocks
+def max_tree(v):
+    """Maximum of an sfix Array by halving: log2(H) rounds of vector comparisons."""
+    cur, n = v, len(v)
+    while n > 1:
+        h = n // 2
+        a, b = cur.get_vector(0, h), cur.get_vector(h, h)
+        keep_a = a > b
+        new = b + keep_a * (a - b)
+        nxt = sfix.Array(h + n % 2)
+        nxt.assign_vector(new, 0)
+        if n % 2:
+            nxt[h] = cur[n - 1]
+        cur, n = nxt, h + n % 2
+    return cur[0]
+
+
+def first_one(bits):
+    """Keep only the lowest-index 1 of a 0/1 sint vector (ties). Kogge-Stone prefix product of (1 - bit)."""
+    n = len(bits)
+    not_p = sint.Array(n)
+    not_p.assign_vector(1 - bits.get_vector())
+    d = 1
+    while d < n:
+        nxt = sint.Array(n)
+        nxt.assign_vector(not_p.get_vector(0, n))
+        nxt.assign_vector(not_p.get_vector(d, n - d) * not_p.get_vector(0, n - d), d)
+        not_p = nxt
+        d *= 2
+    out = sint.Array(n)
+    out.assign_vector(bits.get_vector())
+    out.assign_vector(bits.get_vector(1, n - 1) * not_p.get_vector(0, n - 1), 1)
+    return out
+
+
+def winner_one_hot(margin):
+    """margin: sfix Array. Returns (one_hot sint Array of 0/1 with at most one 1, any_fired sint)."""
+    m = max_tree(margin)
+    any_fired = m >= 0
+    mv = sfix._new(m.v.expand_to_vector(len(margin)))
+    ge = margin.get_vector() >= mv                       # 1 where margin equals the maximum
+    firsts = sint.Array(len(margin))
+    firsts.assign_vector(ge)
+    firsts = first_one(firsts)
+    oh = sint.Array(len(margin))
+    oh.assign_vector(firsts.get_vector() * any_fired)    # nobody wins if nobody reached the threshold
+    return oh, any_fired
+
+
+def clamp(x, lo, hi):
+    below = x < lo
+    x = x + below * (lo - x)
+    above = x > hi
+    return x + above * (hi - x)
+
+
+def trace_update(tr_vec, s_vec):
+    return DECAY * tr_vec + sfix(s_vec)
+
+
+def gather(oh):
+    """Column of the winner: sum_j W[i][j] * one_hot[j]. Raw integer product, no truncation."""
+    m = sint.Matrix(H, 1)
+    m.assign_vector(oh.get_vector())
+    return raw_to_fix((W * m).get_vector())
+
+
+def delta_of(tr_vec, col):
+    return (tr_vec - XT) * LR * (WMAX - col)             # STDP: lr * (trace - x_target) * (w_max - w)
+
+
+def scatter(delta, oh):
+    """W[i][j] += delta[i] * one_hot[j]  (outer product, raw integers)."""
+    d = sint.Matrix(N, 1)
+    d.assign_vector(delta.v)
+    o = sint.Matrix(1, H)
+    o.assign_vector(oh.get_vector())
+    W.assign(W + d * o)
+
+
+def one_step(t, state):
+    u, tr, thr_extra = state
+    s_vec = S[t].get_vector()
+    tr_new = trace_update(tr.get_vector(), s_vec)
+    cur = raw_to_fix((S.get_part(t, 1) * W).get_vector())     # spikes are integers: exact, no truncation
+    u_new = BETA * u.get_vector() + cur
+    margin = u_new - (THR + raw_to_fix(TH.get_vector()))
+    marg = sfix.Array(H)
+    marg.assign_vector(margin)
+    oh, any_fired = winner_one_hot(marg)
+    col = gather(oh)
+    new_col = clamp(col + delta_of(tr_new, col), 0, WMAX)
+    scatter(new_col - col, oh)
+    TH.assign_vector(TH.get_vector() + oh.get_vector() * TPLUS_RAW)      # public integer constant: local
+    u_after = u_new - u_new * any_fired                                   # a spike resets every membrane
+    tr.assign_vector(tr_new)
+    u.assign_vector(u_after)
+    return oh, any_fired
+
+
+def normalize():
+    """Rescale every column of W so that it sums to w_norm (secure division, one per neuron)."""
+    acc = sint.Array(H)
+    acc.assign_all(0)
+
+    @for_range(N)
+    def _(i):
+        acc.assign_vector(acc.get_vector() + W[i].get_vector())
+    factor = WNORM / raw_to_fix(acc.get_vector())
+
+    @for_range(N)
+    def _(i):
+        row = raw_to_fix(W[i].get_vector())
+        W[i].assign_vector((row * factor).v)
+
+
+def run_image():
+    u, tr = sfix.Array(H), sfix.Array(N)
+    u.assign_all(0)
+    tr.assign_all(0)
+    wins = sint.Matrix(T, H)
+    nwin = MemValue(sint(0))
+
+    @for_range(T)
+    def _(t):
+        oh, any_fired = one_step(t, (u, tr, None))
+        wins[t].assign_vector(oh.get_vector())
+        nwin.iadd(any_fired)
+    normalize()
+    return wins, nwin
+
+
+# ---------------------------------------------------------------- modes
+if mode == 'full':
+    wins, nwin = run_image()
+    print_ln('NWIN %s', nwin.reveal())
+
+    @for_range(T)
+    def _(t):
+        print_str('WIN %s:', t)
+
+        @for_range(H)
+        def _(j):
+            print_str(' %s', wins[t][j].reveal())
+        print_ln('')
+    print_str('THETA:')
+
+    @for_range(H)
+    def _(j):
+        print_str(' %s', TH[j].reveal())
+    print_ln('')
+
+    @for_range(N)
+    def _(i):
+        print_str('W %s:', i)
+
+        @for_range(H)
+        def _(j):
+            print_str(' %s', W[i][j].reveal())
+        print_ln('')
+elif mode == 'run':
+    wins, nwin = run_image()
+    print_ln('RESULT %s', nwin.reveal())
+else:
+    u = sfix.Array(H)
+    u.assign_vector(raw_to_fix(U0.get_vector()))
+    tr = sfix.Array(N)
+    tr.assign_vector(raw_to_fix(TR0.get_vector()))
+    col0 = raw_to_fix(COL0.get_vector())
+    oh0 = sint.Array(H)
+    oh0.assign_vector(OH0.get_vector())
+    if mode == 'base':
+        res = sfix.Array(1)
+        res[0] = sfix._new(U0[0])
+    elif mode == 'trace':
+        res = sfix.Array(N); res.assign_vector(trace_update(tr.get_vector(), S[0].get_vector()))
+    elif mode == 'current':
+        res = sfix.Array(H); res.assign_vector(raw_to_fix((S.get_part(0, 1) * W).get_vector()))
+    elif mode == 'current_trunc':
+        Sf, Wf = sfix.Matrix(1, N), sfix.Matrix(N, H)
+        Sf[0].assign_vector(sfix(S[0].get_vector()))
+        for i in range(N):
+            Wf[i].assign_vector(raw_to_fix(W[i].get_vector()))
+        res = sfix.Array(H); res.assign_vector((Sf * Wf).get_vector())
+    elif mode == 'leak':
+        res = sfix.Array(H); res.assign_vector(BETA * u.get_vector() + u.get_vector())
+    elif mode == 'thresh':
+        res = sfix.Array(H); res.assign_vector(sfix(u.get_vector() >= (THR + raw_to_fix(TH.get_vector()))))
+    elif mode == 'wta':
+        marg = sfix.Array(H)
+        marg.assign_vector(u.get_vector() - (THR + raw_to_fix(TH.get_vector())))
+        oh, any_fired = winner_one_hot(marg)
+        res = sfix.Array(H); res.assign_vector(sfix(oh.get_vector()) + sfix(any_fired))
+    elif mode == 'gather':
+        res = sfix.Array(N); res.assign_vector(gather(oh0))
+    elif mode == 'delta':
+        res = sfix.Array(N); res.assign_vector(delta_of(tr.get_vector(), col0))
+    elif mode == 'clamp':
+        res = sfix.Array(N); res.assign_vector(clamp(col0 - 0.5, 0, WMAX))
+    elif mode == 'clamp_all':
+        # the NAIVE way (not used by the training step): clamp every weight of the matrix at once, 2 comparisons each
+        big = sfix.Array(N * H)
+        big.assign_vector(clamp(raw_to_fix(W.get_vector()) - 0.5, 0, WMAX))
+        res = sfix.Array(1)
+        res[0] = big.sum()
+    elif mode == 'scatter':
+        scatter(col0, oh0)
+        res = sfix.Array(1); res[0] = raw_to_fix(W[0][0])
+    elif mode == 'theta':
+        TH.assign_vector(TH.get_vector() + oh0.get_vector() * TPLUS_RAW)
+        res = sfix.Array(1); res[0] = raw_to_fix(TH[0])
+    elif mode == 'reset':
+        res = sfix.Array(H); res.assign_vector(u.get_vector() - u.get_vector() * oh0[0])
+    elif mode == 'normalize':
+        normalize()
+        res = sfix.Array(1); res[0] = raw_to_fix(W[0][0])
+    else:
+        raise CompilerError('unknown mode ' + mode)
+    total = MemValue(sfix(0))
+
+    @for_range(len(res))
+    def _(i):
+        total.iadd(res[i])
+    print_ln('RESULT %s', total.reveal())
